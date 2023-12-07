@@ -1,0 +1,24 @@
+{
+    "name": "AD7606C",
+    "keywords": "AD7606C, AD7606C-18, Serial",
+    "description": "Arduino library for AD7606C-18 - Serial 18 bit ADC",
+    "authors":
+    [
+      {
+        "name": "Enzo",
+        "email": "sunduoze@163.com",
+        "maintainer": true
+      }
+    ],
+    "repository":
+    {
+      "type": "git",
+      "url": "https://github.com/sunduoze/AD7606C"
+    },
+    "version": "0.0.1",
+    "license": "MIT",
+    "frameworks": "Arduino",
+    "platforms": "*",
+    "headers": "AD7606C.h"
+  }
+  
