@@ -1,11 +1,9 @@
 #include "task.h"
 #include <U8g2lib.h>
-
+#include <WiFi.h>
 #include "AD7606C.cpp"
-
 #include "soc/rtc_wdt.h" // 设置看门狗应用
 
-#include <WiFi.h>
 #ifdef U8X8_HAVE_HW_I2C
 #include <Wire.h>
 #endif
@@ -34,16 +32,8 @@
 
 /*BIPOLAR_CODE_TO_VOLT*/
 #define BC2V(code, range_lsb) (((code - 1) & 0x20000) == 0x20000) ? (-((code)-0x40000) * -range_lsb) : ((code) * range_lsb)
-// #define FIX_BUF(code)
 /*UNIPOLAR_CODE_TO_VOLT*/
 #define UC2V(code) (code) * range_lsb
-
-/* 保存数据的结构*/
-typedef struct
-{
-	int sender;
-	char *msg;
-} Data;
 
 uint32_t adc_raw_data[8];
 uint32_t adc_raw_data_sum_256[8] = {0, 0};
@@ -61,9 +51,50 @@ xQueueHandle xQueue;
 TaskHandle_t xTask1;
 TaskHandle_t xTask2;
 
+typedef struct
+{
+	float x; // 状态估计
+	float P; // 状态估计误差协方差
+	float Q; // 过程噪声协方差
+	float R; // 测量噪声协方差
+	float K; // 卡尔曼增益
+} KalmanFilter;
+
+KalmanFilter kf;
 WiFiClient client; // 声明一个ESP32客户端对象，用于与服务器进行连接
 AD7606C_Serial AD7606C_18(ADC_CONVST, ADC_BUSY);
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA); // ESP32 Thing, HW I2C with pin remapping
+
+// 初始化Kalman Filter
+void kalman_filter_init(KalmanFilter *kf, float initial_x, float initial_P, float process_noise, float measurement_noise)
+{
+	kf->x = initial_x;
+	kf->P = initial_P;
+	kf->Q = process_noise;
+	kf->R = measurement_noise;
+}
+
+// 卡尔曼滤波预测步骤
+void kalman_predict(KalmanFilter *kf)
+{
+	// 预测状态
+	kf->x = kf->x;
+	// 预测误差协方差
+	kf->P = kf->P + kf->Q;
+}
+
+// 卡尔曼滤波更新步骤
+void kalman_update(KalmanFilter *kf, float measurement)
+{
+	// 计算卡尔曼增益
+	kf->K = kf->P / (kf->P + kf->R);
+
+	// 更新状态估计
+	kf->x = kf->x + kf->K * (measurement - kf->x);
+
+	// 更新状态估计误差协方差
+	kf->P = (1 - kf->K) * kf->P;
+}
 
 void hardware_init(void)
 {
@@ -128,6 +159,7 @@ void disp_format_data(uint32_t *raw, uint32_t *buf)
 }
 
 uint32_t disp_buf[128];
+
 void draw_curve(uint32_t val)
 {
 	uint32_t buffer_formated[128];
@@ -143,8 +175,11 @@ void draw_curve(uint32_t val)
 		u8g2.drawLine(i, 64 - buffer_formated[i], i + 1, 64 - buffer_formated[i + 1]);
 	}
 	u8g2.setFont(u8g2_font_wqy14_t_gb2312);
+
 	char str[50];
-	sprintf(str, "CH[1]Volt:%2.6fV", BC2V(adc_r_d_avg[1], PN10V0));
+	kalman_predict(&kf);							  // 预测步骤
+	kalman_update(&kf, BC2V(adc_r_d_avg[1], PN10V0)); // 更新步骤
+	sprintf(str, "CH[1]Volt:%2.6fV", kf.x);
 	u8g2.drawUTF8(1, 63, str);
 	u8g2.drawHLine(1, 63, 127);
 	u8g2.drawVLine(0, 0, 64);
@@ -266,7 +301,13 @@ void draw(const char *s, uint8_t symbol, int degree)
 
 void xTask_oled(void *xTask)
 {
+	float initial_x = 0.0;			 // 初始状态估计
+	float initial_P = 1.0;			 // 初始状态估计误差协方差
+	float process_noise = 10.0;		 // 过程噪声协方差
+	float measurement_noise = 100.0; // 测量噪声协方差
 
+	// 初始化Kalman Filter
+	kalman_filter_init(&kf, initial_x, initial_P, process_noise, measurement_noise);
 	while (1)
 	{
 		// Serial.print("core[");
@@ -330,37 +371,47 @@ void xTask_adc(void *xTask)
 
 void xTask_wifi(void *xTask)
 {
-	Serial.println("connect server -ing");
-	if (client.connect(serverIP, serverPort)) // 连接目标地址
+	while (1)
 	{
-		Serial.println("connect success!");
-		client.print("Hello world!");					 // 向服务器发送数据
-		while (client.connected() || client.available()) // 如果已连接或有收到的未读取的数据
+		Serial.println("connect server -ing");
+		if (client.connect(serverIP, serverPort)) // 连接目标地址
 		{
-			conn_wifi = 1;
-			client.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_raw_data[0], PN10V0), BC2V(adc_raw_data[1], PN10V0), BC2V(adc_raw_data[2], PN10V0), BC2V(adc_raw_data[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
+			Serial.println("connect success!");
+			client.print("Hello world!");					 // 向服务器发送数据
+			while (client.connected() || client.available()) // 如果已连接或有收到的未读取的数据
+			{
+				conn_wifi = 1;
+				client.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_raw_data[0], PN10V0), BC2V(adc_raw_data[1], PN10V0), BC2V(adc_raw_data[2], PN10V0), BC2V(adc_raw_data[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
 
-			// if (client.available()) // 如果有数据可读取
-			// {
-			// 	String line = client.readStringUntil('\r\n'); // 读取数据到回车换行符
-			// 	Serial.print("read:");
-			// 	Serial.println(line);
-			// 	client.write(line.c_str()); // 将收到的数据回发
-			// }
-			vTaskDelay(100);
+				// if (client.available()) // 如果有数据可读取
+				// {
+				// 	String line = client.readStringUntil('\r\n'); // 读取数据到回车换行符
+				// 	Serial.print("read:");
+				// 	Serial.println(line);
+				// 	client.write(line.c_str()); // 将收到的数据回发
+				// }
+				vTaskDelay(100);
+			}
+			conn_wifi = 0;
+			Serial.println("close clent");
+			client.stop(); // 关闭客户端
 		}
-		conn_wifi = 0;
-		Serial.println("close clent");
-		client.stop(); // 关闭客户端
+		else
+		{
+			conn_wifi = 0;
+			Serial.println("connect fail!");
+			client.stop(); // 关闭客户端
+		}
+		vTaskDelay(1000);
 	}
-	else
-	{
-		conn_wifi = 0;
-		Serial.println("connect fail!");
-		client.stop(); // 关闭客户端
-	}
-	vTaskDelay(5000);
 }
+
+/* 保存数据的结构*/
+typedef struct
+{
+	int sender;
+	char *msg;
+} Data;
 
 void sendTask(void *parameter)
 {

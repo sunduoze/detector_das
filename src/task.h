@@ -2,8 +2,10 @@
 #define TASK_H
 
 #include "arduino.h"
-#include <SPI.h>
 #include "soc/rtc_wdt.h"
+#include <SPI.h>
+#include "kalman_filter.h"
+
 
 extern void hardware_init(void);
 extern void xTask_wifi(void *xTask);

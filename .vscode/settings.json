@@ -3,6 +3,7 @@
     "files.associations": {
         "new": "cpp",
         "system_error": "cpp",
-        "sstream": "cpp"
+        "sstream": "cpp",
+        "kalman_filter.h": "c"
     }
 }
