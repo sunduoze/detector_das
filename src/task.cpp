@@ -1,40 +1,20 @@
 #include "task.h"
-#include <U8g2lib.h>
-#include <WiFi.h>
-#include "AD7606C.cpp"
-#include "soc/rtc_wdt.h" // 设置看门狗应用
 
+#include <WiFi.h>
 #ifdef U8X8_HAVE_HW_I2C
 #include <Wire.h>
 #endif
+#include "soc/rtc_wdt.h" // 设置看门狗应用
 
-// #define SPI2_SCLK 14
-// #define SPI2_MISO 12 //DOUTA
-// #define SPI2_MOSI 13 //SDI
-// #define SPI2_CS   15
-
-#define ADC_CONVST 2 //
-#define ADC_BUSY 4	 //
-
+#include "AD7606C.cpp"
+#include "PD_UFP.h"
+#include "kalman_filter.h"
+#include "event.h"
+#include "rotary.h"
+uint8_t rotary_dir = false;
+uint8_t volume = true;
 // #Twos Complement Output Coding
 // Bipolar Analog Input Ranges
-
-#define PN20V0 0.00015258f
-#define PN12V5 0.00009536f
-#define PN10V0 0.00007629f
-#define PN6V25 0.00004768f
-#define PN5V00 0.00003815f
-#define PN2V50 0.00001907f
-
-#define P12V5 0.00004768f
-#define P10V0 0.00003815f
-#define P5V00 0.00001907f
-
-/*BIPOLAR_CODE_TO_VOLT*/
-#define BC2V(code, range_lsb) (((code - 1) & 0x20000) == 0x20000) ? (-((code)-0x40000) * -range_lsb) : ((code) * range_lsb)
-/*UNIPOLAR_CODE_TO_VOLT*/
-#define UC2V(code) (code) * range_lsb
-
 uint32_t adc_raw_data[8];
 uint32_t adc_raw_data_sum_256[8] = {0, 0};
 uint32_t adc_r_d_avg[8]; // adc raw data average
@@ -46,65 +26,54 @@ const char *password = "23399693";			 // wifi密码
 const IPAddress serverIP(192, 168, 100, 25); // 欲访问的服务端IP地址
 uint16_t serverPort = 1234;					 // 服务端口号
 
-/* 这个变量保持队列句柄 */
-xQueueHandle xQueue;
-TaskHandle_t xTask1;
-TaskHandle_t xTask2;
+KalmanFilter kf_disp(0.00f, 1.0f, 10.0f, 100.0f);
 
-typedef struct
-{
-	float x; // 状态估计
-	float P; // 状态估计误差协方差
-	float Q; // 过程噪声协方差
-	float R; // 测量噪声协方差
-	float K; // 卡尔曼增益
-} KalmanFilter;
-
-KalmanFilter kf;
 WiFiClient client; // 声明一个ESP32客户端对象，用于与服务器进行连接
 AD7606C_Serial AD7606C_18(ADC_CONVST, ADC_BUSY);
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA); // ESP32 Thing, HW I2C with pin remapping
+class PD_UFP_c PD_UFP;
 
-// 初始化Kalman Filter
-void kalman_filter_init(KalmanFilter *kf, float initial_x, float initial_P, float process_noise, float measurement_noise)
+void pd_init(void)
 {
-	kf->x = initial_x;
-	kf->P = initial_P;
-	kf->Q = process_noise;
-	kf->R = measurement_noise;
-}
+	PD_UFP.init(PD_POWER_OPTION_MAX_20V);
 
-// 卡尔曼滤波预测步骤
-void kalman_predict(KalmanFilter *kf)
-{
-	// 预测状态
-	kf->x = kf->x;
-	// 预测误差协方差
-	kf->P = kf->P + kf->Q;
-}
-
-// 卡尔曼滤波更新步骤
-void kalman_update(KalmanFilter *kf, float measurement)
-{
-	// 计算卡尔曼增益
-	kf->K = kf->P / (kf->P + kf->R);
-
-	// 更新状态估计
-	kf->x = kf->x + kf->K * (measurement - kf->x);
-
-	// 更新状态估计误差协方差
-	kf->P = (1 - kf->K) * kf->P;
+	while (1)
+	{
+		PD_UFP.run();
+		if (PD_UFP.is_power_ready())
+		{
+			if (PD_UFP.get_voltage() == PD_V(20.0) && PD_UFP.get_current() >= PD_A(1.5))
+			{
+				PD_UFP.set_output(1); // Turn on load switch
+				break;
+				Serial.printf("PD 20V ENABLE Sucess\r\n");
+				// PD_UFP.set_led(1);      // Output reach 20V and 1.5A, set indicators on
+			}
+			else
+			{
+				PD_UFP.set_output(0); // Turn off load switch
+				Serial.printf("DISABLE\r\n");
+				break;
+				// PD_UFP.blink_led(400);  // Output less than 20V or 1.5A, blink LED
+			}
+		}
+	}
 }
 
 void hardware_init(void)
 {
 	Serial.begin(500000);
+	Wire.setClock(1e6);
+	// pd_init();
+
 	Serial.printf("\r\n\r\nEVAL-AD7606CFMCZ debug!\r\n");
 	Serial.println(getCpuFrequencyMhz());
+
 	delay(1000);
 	u8g2.begin();
 	u8g2.enableUTF8Print();
-	Wire.setClock(1000000);
+
+	rotary_init(); // 初始化编码器
 
 	WiFi.mode(WIFI_STA);
 	WiFi.setSleep(false); // 关闭STA模式下wifi休眠，提高响应速度
@@ -128,9 +97,9 @@ void hardware_init(void)
 		Serial.printf("[debug]0x%.2d=0x%.8x\r\n", i, adc_raw_data[i]);
 	}
 
-	rtc_wdt_protect_off();					// 看门狗写保护关闭，关闭后可以喂狗
-	rtc_wdt_enable();						// 启动看门狗
-	rtc_wdt_set_time(RTC_WDT_STAGE0, 8000); // 设置看门狗超时 800ms，超时重启
+	rtc_wdt_protect_off(); // 看门狗写保护关闭，关闭后可以喂狗
+	rtc_wdt_enable();
+	rtc_wdt_set_time(RTC_WDT_STAGE0, 3000); // wdt timeout
 }
 
 void disp_format_data(uint32_t *raw, uint32_t *buf)
@@ -177,9 +146,10 @@ void draw_curve(uint32_t val)
 	u8g2.setFont(u8g2_font_wqy14_t_gb2312);
 
 	char str[50];
-	kalman_predict(&kf);							  // 预测步骤
-	kalman_update(&kf, BC2V(adc_r_d_avg[1], PN10V0)); // 更新步骤
-	sprintf(str, "CH[1]Volt:%2.6fV", kf.x);
+
+	kf_disp.predict();							  // 预测步骤
+	kf_disp.update(BC2V(adc_r_d_avg[1], PN10V0)); // 更新步骤
+	sprintf(str, "CH[1]Volt:%2.6fV", kf_disp.get_val());
 	u8g2.drawUTF8(1, 63, str);
 	u8g2.drawHLine(1, 63, 127);
 	u8g2.drawVLine(0, 0, 64);
@@ -301,13 +271,6 @@ void draw(const char *s, uint8_t symbol, int degree)
 
 void xTask_oled(void *xTask)
 {
-	float initial_x = 0.0;			 // 初始状态估计
-	float initial_P = 1.0;			 // 初始状态估计误差协方差
-	float process_noise = 10.0;		 // 过程噪声协方差
-	float measurement_noise = 100.0; // 测量噪声协方差
-
-	// 初始化Kalman Filter
-	kalman_filter_init(&kf, initial_x, initial_P, process_noise, measurement_noise);
 	while (1)
 	{
 		// Serial.print("core[");
@@ -323,11 +286,42 @@ void xTask_oled(void *xTask)
 	}
 }
 
+#define WINDOW_SIZE 3
+
+// 毛刺降噪算法
+void removeSpikes(int *signal, int length)
+{
+	int window[WINDOW_SIZE];
+	int i, j, sum;
+
+	for (i = 1; i < length - 1; i++)
+	{
+		// 构建滑动窗口
+		for (j = 0; j < WINDOW_SIZE; j++)
+		{
+			window[j] = signal[i - 1 + j];
+		}
+
+		// 计算窗口内的平均值
+		sum = 0;
+		for (j = 0; j < WINDOW_SIZE; j++)
+		{
+			sum += window[j];
+		}
+		int average = sum / WINDOW_SIZE;
+
+		// 如果当前点与平均值相差较大，则用平均值替代当前值
+		if (signal[i] - average > 10 || average - signal[i] > 10)
+		{
+			signal[i] = average;
+		}
+	}
+}
 /*
  * @TODO: 去噪点&平滑滤波，not 平均滤波
  *
  */
-void xTask_dbg(void *xTask)
+void xTask_dbgx(void *xTask)
 {
 	while (1)
 	{
@@ -336,11 +330,12 @@ void xTask_dbg(void *xTask)
 		// Serial.printf("]xTask_dbg \r\n");
 		// Serial.printf("[%6d %6d %6d]%.6f %.6f\r\n", adc_raw_data[0], adc_r_d_avg[0], adc_r_d_avg[3], BC2V(adc_r_d_avg[0], PN10V0), BC2V(adc_r_d_avg[1], PN10V0));
 		vTaskDelay(100);
-		Serial.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_r_d_avg[0], PN10V0), BC2V(adc_r_d_avg[1], PN10V0), BC2V(adc_r_d_avg[2], PN10V0), BC2V(adc_r_d_avg[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
+		// Serial.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_r_d_avg[0], PN10V0), BC2V(adc_r_d_avg[1], PN10V0), BC2V(adc_r_d_avg[2], PN10V0), BC2V(adc_r_d_avg[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
+		Serial.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_raw_data[0], PN10V0), BC2V(adc_raw_data[1], PN10V0), BC2V(adc_raw_data[2], PN10V0), BC2V(adc_raw_data[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
 	}
 }
 
-void xTask_adc(void *xTask)
+void xTask_adcx(void *xTask)
 {
 	static uint16_t cnt;
 	while (1)
@@ -373,15 +368,15 @@ void xTask_wifi(void *xTask)
 {
 	while (1)
 	{
-		Serial.println("connect server -ing");
+		// Serial.println("connect server -ing");
 		if (client.connect(serverIP, serverPort)) // 连接目标地址
 		{
 			Serial.println("connect success!");
-			client.print("Hello world!");					 // 向服务器发送数据
+			// client.print("Hello world!");					 // 向服务器发送数据
 			while (client.connected() || client.available()) // 如果已连接或有收到的未读取的数据
 			{
 				conn_wifi = 1;
-				client.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_raw_data[0], PN10V0), BC2V(adc_raw_data[1], PN10V0), BC2V(adc_raw_data[2], PN10V0), BC2V(adc_raw_data[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
+				client.printf("%2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f\r\n", BC2V(adc_raw_data[0], PN10V0), BC2V(adc_raw_data[1], PN10V0), BC2V(adc_raw_data[2], PN10V0), BC2V(adc_raw_data[3], PN10V0), BC2V(adc_raw_data[4], PN10V0), BC2V(adc_raw_data[5], PN10V0), BC2V(adc_raw_data[6], PN10V0), BC2V(adc_raw_data[7], PN10V0));
 
 				// if (client.available()) // 如果有数据可读取
 				// {
@@ -399,77 +394,113 @@ void xTask_wifi(void *xTask)
 		else
 		{
 			conn_wifi = 0;
-			Serial.println("connect fail!");
+			// Serial.println("connect fail!");
 			client.stop(); // 关闭客户端
 		}
 		vTaskDelay(1000);
 	}
 }
 
-/* 保存数据的结构*/
-typedef struct
-{
-	int sender;
-	char *msg;
-} Data;
+#include "rotary.h"
 
-void sendTask(void *parameter)
+void xTask_rotK(void *xTask)
 {
-	/*保持发送数据的状态 */
-	BaseType_t xStatus;
-	/* 阻止任务的时间，直到队列有空闲空间 */
-	const TickType_t xTicksToWait = pdMS_TO_TICKS(100);
-	/* 创建要发送的数据 */
-	Data data;
-	/* sender 1的id为1 */
-	data.sender = 1;
-	for (;;)
+	static double rotary;
+	static double rotary_hist;
+	while (1)
 	{
-		Serial.print("sendTask run on core");
-		/* 获取任务被固定到 */
-		Serial.print(xTaskGetAffinity(xTask1));
-		Serial.println("is sending data");
-		data.msg = (char *)malloc(20);
-		memset(data.msg, 0, 20);
-		memcpy(data.msg, "hello world", strlen("hello world"));
-		/* 将数据发送到队列前面*/
-		xStatus = xQueueSendToFront(xQueue, &data, xTicksToWait);
-		/* 检查发送是否正常 */ if (xStatus == pdPASS)
+		// Serial.println("connect server -ing");
+		sys_KeyProcess();
+		TimerEventLoop();
+		rotary = sys_Counter_Get();
+
+		if (rotary != rotary_hist)
 		{
-			/* 增加发送方1 */
-			Serial.println("sendTask sent data");
+			Serial.printf("rotary:%lf\n", rotary);
 		}
-		/* 我们在这里延迟，以便receiveTask有机会接收数据 */
-		delay(1000);
+		rotary_hist = rotary;
+
+		vTaskDelay(1);
 	}
-	vTaskDelete(NULL);
 }
 
-void receiveTask(void *parameter)
-{
-	/*保持接收数据的状态 */
-	BaseType_t xStatus;
-	/* 阻止任务的时间，直到数据可用 */
-	const TickType_t xTicksToWait = pdMS_TO_TICKS(100);
-	Data data;
-	for (;;)
-	{
-		/*从队列接收数据 */
-		xStatus = xQueueReceive(xQueue, &data, xTicksToWait);
-		/* 检查接收是否正常 */
-		if (xStatus == pdPASS)
-		{
-			Serial.print("receiveTask run on core ");
-			/*获取任务固定的核心 */
-			Serial.print(xTaskGetAffinity(xTask2));
-			/* 将数据打印到终端*/
-			Serial.print("got data:");
-			Serial.print("sender=");
-			Serial.print(data.sender);
-			Serial.print("msg=");
-			Serial.println(data.msg);
-			free(data.msg);
-		}
-	}
-	vTaskDelete(NULL);
-}
+/***************************************************use case ****************************************************************/
+
+/* 创建队列，其大小可包含5个元素Data */
+// xQueue = xQueueCreate(5, sizeof(Data));
+// xTaskCreatePinnedToCore(
+//     sendTask, "sendTask", /* 任务名称. */ 10000, /* 任务的堆栈大小 */ NULL, /* 任务的参数 */ 1, /* 任务的优先级 */ &xTask1, /* 跟踪创建的任务的任务句柄 */ 0); /* pin任务到核心0 */
+// xTaskCreatePinnedToCore(
+//     receiveTask, "receiveTask", 10000, NULL, 1, &xTask2, 1);
+
+// /* 这个变量保持队列句柄 */
+// xQueueHandle xQueue;
+// TaskHandle_t xTask1;
+// TaskHandle_t xTask2;
+// /* 保存数据的结构*/
+// typedef struct
+// {
+// 	int sender;
+// 	char *msg;
+// } Data;
+
+// void sendTask(void *parameter)
+// {
+// 	/*保持发送数据的状态 */
+// 	BaseType_t xStatus;
+// 	/* 阻止任务的时间，直到队列有空闲空间 */
+// 	const TickType_t xTicksToWait = pdMS_TO_TICKS(100);
+// 	/* 创建要发送的数据 */
+// 	Data data;
+// 	/* sender 1的id为1 */
+// 	data.sender = 1;
+// 	for (;;)
+// 	{
+// 		Serial.print("sendTask run on core");
+// 		/* 获取任务被固定到 */
+// 		Serial.print(xTaskGetAffinity(xTask1));
+// 		Serial.println("is sending data");
+// 		data.msg = (char *)malloc(20);
+// 		memset(data.msg, 0, 20);
+// 		memcpy(data.msg, "hello world", strlen("hello world"));
+// 		/* 将数据发送到队列前面*/
+// 		xStatus = xQueueSendToFront(xQueue, &data, xTicksToWait);
+// 		/* 检查发送是否正常 */ if (xStatus == pdPASS)
+// 		{
+// 			/* 增加发送方1 */
+// 			Serial.println("sendTask sent data");
+// 		}
+// 		/* 我们在这里延迟，以便receiveTask有机会接收数据 */
+// 		delay(1000);
+// 	}
+// 	vTaskDelete(NULL);
+// }
+
+// void receiveTask(void *parameter)
+// {
+// 	/*保持接收数据的状态 */
+// 	BaseType_t xStatus;
+// 	/* 阻止任务的时间，直到数据可用 */
+// 	const TickType_t xTicksToWait = pdMS_TO_TICKS(100);
+// 	Data data;
+// 	for (;;)
+// 	{
+// 		/*从队列接收数据 */
+// 		xStatus = xQueueReceive(xQueue, &data, xTicksToWait);
+// 		/* 检查接收是否正常 */
+// 		if (xStatus == pdPASS)
+// 		{
+// 			Serial.print("receiveTask run on core ");
+// 			/*获取任务固定的核心 */
+// 			Serial.print(xTaskGetAffinity(xTask2));
+// 			/* 将数据打印到终端*/
+// 			Serial.print("got data:");
+// 			Serial.print("sender=");
+// 			Serial.print(data.sender);
+// 			Serial.print("msg=");
+// 			Serial.println(data.msg);
+// 			free(data.msg);
+// 		}
+// 	}
+// 	vTaskDelete(NULL);
+// }

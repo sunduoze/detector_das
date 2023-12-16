@@ -4,6 +4,22 @@
 #include "arduino.h"
 #include <SPI.h>
 
+#define PN20V0 0.00015258f
+#define PN12V5 0.00009536f
+#define PN10V0 0.00007629f
+#define PN6V25 0.00004768f
+#define PN5V00 0.00003815f
+#define PN2V50 0.00001907f
+
+#define P12V5 0.00004768f
+#define P10V0 0.00003815f
+#define P5V00 0.00001907f
+
+/*BIPOLAR_CODE_TO_VOLT*/
+#define BC2V(code, range_lsb) (((code - 1) & 0x20000) == 0x20000) ? (-((code)-0x40000) * -range_lsb) : ((code) * range_lsb)
+/*UNIPOLAR_CODE_TO_VOLT*/
+#define UC2V(code) (code) * range_lsb
+
 class AD7606C
 {
 protected:
