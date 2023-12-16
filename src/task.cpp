@@ -291,6 +291,7 @@ void xTask_oled(void *xTask)
 // 毛刺降噪算法
 void removeSpikes(int *signal, int length)
 {
+#define DESPIKES_THRESHOLD 10
 	int window[WINDOW_SIZE];
 	int i, j, sum;
 
@@ -301,7 +302,6 @@ void removeSpikes(int *signal, int length)
 		{
 			window[j] = signal[i - 1 + j];
 		}
-
 		// 计算窗口内的平均值
 		sum = 0;
 		for (j = 0; j < WINDOW_SIZE; j++)
@@ -311,7 +311,7 @@ void removeSpikes(int *signal, int length)
 		int average = sum / WINDOW_SIZE;
 
 		// 如果当前点与平均值相差较大，则用平均值替代当前值
-		if (signal[i] - average > 10 || average - signal[i] > 10)
+		if (signal[i] - average > DESPIKES_THRESHOLD || average - signal[i] > DESPIKES_THRESHOLD)
 		{
 			signal[i] = average;
 		}
@@ -330,8 +330,7 @@ void xTask_dbgx(void *xTask)
 		// Serial.printf("]xTask_dbg \r\n");
 		// Serial.printf("[%6d %6d %6d]%.6f %.6f\r\n", adc_raw_data[0], adc_r_d_avg[0], adc_r_d_avg[3], BC2V(adc_r_d_avg[0], PN10V0), BC2V(adc_r_d_avg[1], PN10V0));
 		vTaskDelay(100);
-		// Serial.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_r_d_avg[0], PN10V0), BC2V(adc_r_d_avg[1], PN10V0), BC2V(adc_r_d_avg[2], PN10V0), BC2V(adc_r_d_avg[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
-		Serial.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_raw_data[0], PN10V0), BC2V(adc_raw_data[1], PN10V0), BC2V(adc_raw_data[2], PN10V0), BC2V(adc_raw_data[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
+		Serial.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_r_d_avg[0], PN10V0), BC2V(adc_r_d_avg[1], PN10V0), BC2V(adc_r_d_avg[2], PN10V0), BC2V(adc_r_d_avg[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
 	}
 }
 
@@ -346,7 +345,6 @@ void xTask_adcx(void *xTask)
 		// Serial.print("tsk_adc: ");
 		// Serial.println(millis());
 		AD7606C_18.fast_read(adc_raw_data);
-		adc_raw_data[3] = 262143;
 		for (uint8_t i = 0; i < 8; i++)
 		{
 			adc_raw_data_sum_256[i] += adc_raw_data[i];
@@ -376,7 +374,7 @@ void xTask_wifi(void *xTask)
 			while (client.connected() || client.available()) // 如果已连接或有收到的未读取的数据
 			{
 				conn_wifi = 1;
-				client.printf("%2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f\r\n", BC2V(adc_raw_data[0], PN10V0), BC2V(adc_raw_data[1], PN10V0), BC2V(adc_raw_data[2], PN10V0), BC2V(adc_raw_data[3], PN10V0), BC2V(adc_raw_data[4], PN10V0), BC2V(adc_raw_data[5], PN10V0), BC2V(adc_raw_data[6], PN10V0), BC2V(adc_raw_data[7], PN10V0));
+				client.printf("%2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f\r\n", BC2V(adc_r_d_avg[0], PN10V0), BC2V(adc_r_d_avg[1], PN10V0), BC2V(adc_r_d_avg[2], PN10V0), BC2V(adc_r_d_avg[3], PN10V0), BC2V(adc_r_d_avg[4], PN10V0), BC2V(adc_r_d_avg[5], PN10V0), BC2V(adc_r_d_avg[6], PN10V0), BC2V(adc_r_d_avg[7], PN10V0));
 
 				// if (client.available()) // 如果有数据可读取
 				// {
@@ -401,15 +399,12 @@ void xTask_wifi(void *xTask)
 	}
 }
 
-#include "rotary.h"
-
 void xTask_rotK(void *xTask)
 {
 	static double rotary;
 	static double rotary_hist;
 	while (1)
 	{
-		// Serial.println("connect server -ing");
 		sys_KeyProcess();
 		TimerEventLoop();
 		rotary = sys_Counter_Get();

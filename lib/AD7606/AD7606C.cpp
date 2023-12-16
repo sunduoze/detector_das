@@ -421,10 +421,13 @@ uint8_t AD7606C_Serial::data_read(uint32_t *data)
 	memset(data_buf, 0, sz);
 
 	digitalWrite(hspi->pinSS(), LOW); // pull SS slow to prep other end for transfer
+
+	portDISABLE_INTERRUPTS();
 	for (uint8_t i = 0; i < sz; i++)
 	{
 		data_buf[i] = hspi->transfer(0x00);
 	}
+	portENABLE_INTERRUPTS();
 	digitalWrite(hspi->pinSS(), HIGH); // pull ss high to signify end of data transfer
 
 	// for (uint8_t i = 0; i < sz; i++)

@@ -27,6 +27,7 @@
 #define ADC_CONVST 2 //
 #define ADC_BUSY 4   //
 
+extern spinlock_t task_lock;
 extern uint8_t rotary_dir;
 extern uint8_t volume;
 extern void hardware_init(void);
