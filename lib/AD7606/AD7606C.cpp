@@ -20,6 +20,8 @@
 #define AD7606_REG_CLK_FS_COUNTER 0x2D
 #define AD7606_REG_CLK_OS_COUNTER 0x2E
 #define AD7606_REG_ID 0x2F
+
+#define DATA_SIZE 28
 // Reset the AD7606
 void AD7606C::reset()
 {
@@ -377,6 +379,15 @@ static int32_t cpy26b32b(uint8_t *psrc, uint32_t srcsz, uint32_t *pdst)
 	return 0;
 }
 
+static inline void convert_18bit_to_32bit(int32_t *unsigned_val, int32_t srcsz, int32_t *pdst)
+{
+	unsigned int i;
+	for (i = 0; i < srcsz; i++)
+	{
+		pdst[i] = (unsigned_val[i] & 0x00020000) ? (unsigned_val[i] | 0xFFFC0000) : unsigned_val[i];
+	}
+}
+
 /**
  * @brief Read conversion data.
  *
@@ -394,7 +405,7 @@ static int32_t cpy26b32b(uint8_t *psrc, uint32_t srcsz, uint32_t *pdst)
  *         Example: 1 - xxx error.
  *                  0 - No errors encountered.
  */
-uint8_t AD7606C_Serial::data_read(uint32_t *data)
+uint8_t AD7606C_Serial::data_read(int32_t *data)
 {
 	uint8_t ret;
 	uint32_t sz;
@@ -403,8 +414,8 @@ uint8_t AD7606C_Serial::data_read(uint32_t *data)
 	uint8_t bits = 18;
 	uint8_t sbits = data_inc_status ? 8 : 0;
 	uint8_t nchannels = 8;
-
-	uint8_t data_buf[28] = {0x00};
+	uint32_t data_temp[DATA_SIZE];
+	uint8_t data_buf[DATA_SIZE] = {0x00};
 
 	sz = nchannels * (bits + sbits);
 
@@ -439,11 +450,15 @@ uint8_t AD7606C_Serial::data_read(uint32_t *data)
 	{
 	case 18:
 		if (data_inc_status)
-			ret = cpy26b32b(data_buf, sz, data);
+		{
+			ret = cpy26b32b(data_buf, sz, data_temp);
+			// TODO:
+		}
 		else
 		{
 			// #warning "此处直接data_buf 为16bits，需要确认能否直接转换为8bits"
-			ret = cpy18b32b(data_buf, sz, data);
+			ret = cpy18b32b(data_buf, sz, data_temp);
+			convert_18bit_to_32bit((int32_t *)data_temp, 8, data);
 			// Serial.printf("[debug]status=0 size:%d\r\n", sz);
 		}
 
@@ -489,7 +504,7 @@ uint8_t AD7606C_Serial::data_read(uint32_t *data)
  * @return ret - return code.
  *                  0 - No errors encountered.
  */
-int32_t AD7606C_Serial::read(uint32_t *data)
+int32_t AD7606C_Serial::read(int32_t *data)
 {
 	int32_t ret;
 	uint8_t busy;
@@ -515,7 +530,7 @@ int32_t AD7606C_Serial::read(uint32_t *data)
 	return data_read(data);
 }
 
-int32_t AD7606C_Serial::fast_read(uint32_t *data)
+int32_t AD7606C_Serial::fast_read(int32_t *data)
 {
 	int32_t ret;
 	uint8_t busy;

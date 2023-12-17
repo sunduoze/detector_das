@@ -15,9 +15,9 @@ uint8_t rotary_dir = false;
 uint8_t volume = true;
 // #Twos Complement Output Coding
 // Bipolar Analog Input Ranges
-uint32_t adc_raw_data[8];
-uint32_t adc_raw_data_sum_256[8] = {0, 0};
-uint32_t adc_r_d_avg[8]; // adc raw data average
+int32_t adc_raw_data[8];
+int32_t adc_raw_data_sum_256[8] = {0, 0};
+int32_t adc_r_d_avg[8]; // adc raw data average
 
 uint8_t conn_wifi = 0;
 
@@ -328,9 +328,9 @@ void xTask_dbgx(void *xTask)
 		// Serial.print("core[");
 		// Serial.print(xTaskGetAffinity(xTask));
 		// Serial.printf("]xTask_dbg \r\n");
-		// Serial.printf("[%6d %6d %6d]%.6f %.6f\r\n", adc_raw_data[0], adc_r_d_avg[0], adc_r_d_avg[3], BC2V(adc_r_d_avg[0], PN10V0), BC2V(adc_r_d_avg[1], PN10V0));
+		Serial.printf("[%6d %6d %6d %6d][%6d %6d %6d %6d]\r\n", adc_raw_data[0], adc_raw_data[1], adc_raw_data[2], adc_raw_data[3], adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
 		vTaskDelay(100);
-		Serial.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_r_d_avg[0], PN10V0), BC2V(adc_r_d_avg[1], PN10V0), BC2V(adc_r_d_avg[2], PN10V0), BC2V(adc_r_d_avg[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
+		// Serial.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_raw_data[0], PN10V0), BC2V(adc_raw_data[1], PN10V0), BC2V(adc_raw_data[2], PN10V0), BC2V(adc_raw_data[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
 	}
 }
 
@@ -347,6 +347,7 @@ void xTask_adcx(void *xTask)
 		AD7606C_18.fast_read(adc_raw_data);
 		for (uint8_t i = 0; i < 8; i++)
 		{
+			// adc_norm_data[i] = convert_18bit_to_32bit(adc_raw_data[i]);
 			adc_raw_data_sum_256[i] += adc_raw_data[i];
 		}
 		if (++cnt >= 256)
@@ -383,7 +384,7 @@ void xTask_wifi(void *xTask)
 				// 	Serial.println(line);
 				// 	client.write(line.c_str()); // 将收到的数据回发
 				// }
-				vTaskDelay(100);
+				vTaskDelay(5);
 			}
 			conn_wifi = 0;
 			Serial.println("close clent");
