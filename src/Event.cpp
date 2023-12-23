@@ -1,4 +1,6 @@
 #include "event.h"
+bool BoostEvent = false;
+float BoostTime = 60; // 爆发模式持续时间      (秒)
 
 // 事件计时器
 uint32_t EventTimerUpdate = 0;
@@ -16,32 +18,32 @@ void TimerUpdateEvent(void)
     ScreenProtectorTimer = millis();
     // pages_Tip_Display_timer = EventTimerUpdate;
 }
-// /***
-//  * @description: 单击功率爆发技能 事件
-//  * @param {*}
-//  * @return {*}
-//  */
-// uint32_t BoostTimer = 0;
-// void BoostButton_EventLoop(void)
-// {
-//     // 单击 进行短时功率爆发
-//     if (SYSKey == 1)
-//     {
-//         if (!BoostEvent)
-//         {
-//             BoostEvent = true;
-//             BoostTimer = millis();
-//         }
-//         else
-//             BoostEvent = false;
-//     }
-//     // 功率爆发技能计时器
-//     if (millis() - BoostTimer > BoostTime * 1000)
-//     {
-//         // 技能时间到
-//         BoostEvent = false;
-//     }
-// }
+/***
+ * @description: 单击功率爆发技能 事件
+ * @param {*}
+ * @return {*}
+ */
+uint32_t BoostTimer = 0;
+void BoostButton_EventLoop(void)
+{
+    // 单击 进行短时功率爆发
+    if (SYSKey == 1)
+    {
+        if (!BoostEvent)
+        {
+            BoostEvent = true;
+            BoostTimer = millis();
+        }
+        else
+            BoostEvent = false;
+    }
+    // 功率爆发技能计时器
+    if (millis() - BoostTimer > BoostTime * 1000)
+    {
+        // 技能时间到
+        BoostEvent = false;
+    }
+}
 // /***
 //  * @description: 双击快速召唤PID设置
 //  * @param {*}
@@ -288,7 +290,7 @@ void TimerEventLoop(void)
 //     // 屏保以及警示画面
 //     while (1)
 //     {
-//         Clear();
+//         oled.clearBuffer();
 
 //         DrawIntensiveComputing();
 

@@ -229,19 +229,30 @@ uint8_t AD7606C_Serial::write_and_chk_reg(uint8_t reg_addr, uint8_t reg_val)
 	return ret;
 }
 
-void AD7606C_Serial::get_id(void)
+uint8_t AD7606C_Serial::check_id(void)
 {
+	uint8_t ret = 0;
 	uint8_t byte1;
 
 	read_reg(0x2F, &byte1);
 	if ((byte1 & 0xF0) == 0x30)
 	{
-		Serial.printf("DEV_ID:D7606C-18 generic. SILICON_REVISION:0x%x\r\n", byte1 & 0x0F);
+		if ((byte1 & 0x0F) != 0x02)
+		{
+			Serial.printf("[error]SILICON_REVISION is not 0x02, is:0x%x\r\n", byte1);
+			ret = 2;
+		}
+		else
+		{
+			// Serial.printf("DEV_ID:D7606C-18 generic. SILICON_REVISION:0x%x\r\n", byte1 & 0x0F);
+		}
 	}
 	else
 	{
-		Serial.printf("[error]AD7606C Init fail! data:0x%x\r\n", byte1);
+		ret = 1;
+		Serial.printf("[error]DEV_ID is not D7606C-18 generic or AD7606C Init fail! data:0x%x\r\n", byte1);
 	}
+	return ret;
 }
 
 void AD7606C_Serial::get_all_reg_val(void)
@@ -332,11 +343,19 @@ void AD7606C_Serial::debug(void)
 void AD7606C_Serial::config(void)
 {
 	uint8_t byte1;
+
+	check_id();
 	write_and_chk_reg(AD7606_REG_CONFIG, 0x00); // CONFIG 0x02(数据中增加状态位，用于区分通道x的数据)
 	// write_and_chk_reg(AD7606_REG_CONFIG, 0x02);data_inc_status = 1;
 	write_and_chk_reg(AD7606_REG_BANDWIDTH, 0x00); // 全部使用低带宽
 	// write_and_chk_reg(AD7606_REG_OVERSAMPLING, 0xF8); // 使用最大过采样率 AD7606_OSR_256 & OS_PAD = 16 => busy=494.6us
-	write_and_chk_reg(AD7606_REG_OVERSAMPLING, 0x08); // 使用最大过采样率 AD7606_OSR_256 & OS_PAD = 0  => busy=255.6us
+	write_and_chk_reg(AD7606_REG_OVERSAMPLING, 0x08);	  // 使用最大过采样率 AD7606_OSR_256 & OS_PAD = 0  => busy=255.6us
+	write_and_chk_reg(AD7606_REG_RANGE_CH_ADDR(1), 0xBB); // channel1 & channel2 => ±20 V differential range
+	write_and_chk_reg(AD7606_REG_RANGE_CH_ADDR(3), 0x5B); // channel3  => ±20 V differential range channel4 => 0 V to 5 V single-ended range.
+	write_and_chk_reg(AD7606_REG_RANGE_CH_ADDR(5), 0x65); // channel5  => 0 V to 5 V single-ended range channel6 => 0 V to 10 V single-ended range.
+	write_and_chk_reg(AD7606_REG_RANGE_CH_ADDR(7), 0x15); // channel7  => 0 V to 5 V single-ended range channel8 => ±5 V single-ended range.
+
+	write_reg(0, 0); // exti register mode & get into ADC mode
 }
 
 /* Internal function to copy the content of a buffer in 18-bit chunks to a 32-bit buffer by

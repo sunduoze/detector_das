@@ -11,18 +11,30 @@
 #include "kalman_filter.h"
 #include "event.h"
 #include "rotary.h"
+#include "beep.h"
+uint8_t *C_table[] = {c1, c2, c3, Lightning, c5, c6, c7};
+
 uint8_t rotary_dir = false;
 uint8_t volume = true;
 // #Twos Complement Output Coding
 // Bipolar Analog Input Ranges
-int32_t adc_raw_data[8];
-int32_t adc_raw_data_sum_256[8] = {0, 0};
-int32_t adc_r_d_avg[8]; // adc raw data average
+int32_t adc_raw_data[ADC_ALL_CH];
+int32_t adc_raw_data_sum_256[ADC_ALL_CH] = {0, 0};
+int32_t adc_r_d_avg[ADC_ALL_CH]; // adc raw data average
 
 uint8_t conn_wifi = 0;
 
-const char *ssid = "CandyTime_857112";		 // wifi名
-const char *password = "23399693";			 // wifi密码
+struct adc_calibration_
+{
+	float adc_gain_ch[ADC_ALL_CH];
+	float adc_offset_ch[ADC_ALL_CH];
+} adc_cali;
+
+const char *ssid = "CandyTime_857112"; // wifi名
+const char *password = "23399693";	   // wifi密码
+const char *ssid_bk = "GBA";		   // wifi名
+const char *password_bk = "XTyjy8888"; // wifi密码
+
 const IPAddress serverIP(192, 168, 100, 25); // 欲访问的服务端IP地址
 uint16_t serverPort = 1234;					 // 服务端口号
 
@@ -30,13 +42,15 @@ KalmanFilter kf_disp(0.00f, 1.0f, 10.0f, 100.0f);
 
 WiFiClient client; // 声明一个ESP32客户端对象，用于与服务器进行连接
 AD7606C_Serial AD7606C_18(ADC_CONVST, ADC_BUSY);
-U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA); // ESP32 Thing, HW I2C with pin remapping
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA); // ESP32 Thing, HW I2C with pin remapping
+// U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA); // ESP32 Thing, HW I2C with pin remapping
 class PD_UFP_c PD_UFP;
 
 void pd_init(void)
 {
+	uint16_t timeout = 2000;
 	PD_UFP.init(PD_POWER_OPTION_MAX_20V);
-
+	Serial.printf("PD_UFP.init-ing\r\n");
 	while (1)
 	{
 		PD_UFP.run();
@@ -45,61 +59,148 @@ void pd_init(void)
 			if (PD_UFP.get_voltage() == PD_V(20.0) && PD_UFP.get_current() >= PD_A(1.5))
 			{
 				PD_UFP.set_output(1); // Turn on load switch
-				break;
 				Serial.printf("PD 20V ENABLE Sucess\r\n");
+				SetSound(BootSound); // 播放音效
+				break;
+
 				// PD_UFP.set_led(1);      // Output reach 20V and 1.5A, set indicators on
 			}
 			else
 			{
 				PD_UFP.set_output(0); // Turn off load switch
 				Serial.printf("DISABLE\r\n");
+				// SetSound(TipRemove);
 				break;
 				// PD_UFP.blink_led(400);  // Output less than 20V or 1.5A, blink LED
 			}
 		}
+		if (timeout-- <= 1)
+		{
+			Serial.printf("power not ready\r\n");
+			// SetSound(TipRemove);
+			break;
+		}
+		vTaskDelay(1);
 	}
 }
 
-void hardware_init(void)
+void wifi_init()
 {
-	Serial.begin(500000);
-	Wire.setClock(1e6);
-	// pd_init();
-
-	Serial.printf("\r\n\r\nEVAL-AD7606CFMCZ debug!\r\n");
-	Serial.println(getCpuFrequencyMhz());
-
-	delay(1000);
-	u8g2.begin();
-	u8g2.enableUTF8Print();
-
-	rotary_init(); // 初始化编码器
-
 	WiFi.mode(WIFI_STA);
 	WiFi.setSleep(false); // 关闭STA模式下wifi休眠，提高响应速度
 	WiFi.begin(ssid, password);
+	uint8_t i = 100;
 	while (WiFi.status() != WL_CONNECTED)
 	{
-		delay(500);
+		delay(200);
 		Serial.print(".");
+		if (i-- == 50)
+		{
+			Serial.printf("Connecting to %s\r\n", ssid_bk);
+			WiFi.begin(ssid_bk, password_bk);
+			Serial.println("WiFi connected");
+		}
+		if (i <= 1)
+		{
+			Serial.print("\r\nWifi connect failed\r\n");
+			break;
+		}
 	}
-	Serial.print("Connected \r\nIP Address:");
-	Serial.println(WiFi.localIP());
 
-	AD7606C_18.get_id();
+	if (i > 50)
+	{
+		Serial.printf("Connecting to %s\r\n", ssid);
+	}
+
+	Serial.println("IP address: ");
+	Serial.println(WiFi.localIP());
+	Serial.println("MAC address: ");
+	Serial.println(WiFi.macAddress());
+	Serial.println("DNS address: ");
+	Serial.println(WiFi.dnsIP());
+	Serial.println("Gateway address: ");
+	Serial.println(WiFi.gatewayIP());
+	Serial.println("Subnet mask: ");
+	Serial.println(WiFi.subnetMask());
+}
+
+void adc_init()
+{
+	for (uint8_t i = 0; i < ADC_ALL_CH; i++)
+	{
+		adc_cali.adc_gain_ch[i] = 1.0f;
+		adc_cali.adc_offset_ch[i] = 0.0f;
+	}
+	adc_cali.adc_gain_ch[ADC_CH7] = 5.0f;
+	adc_cali.adc_gain_ch[ADC_CH8] = -2.0f; // curr = volt / 100 / 0.005R
+
 	AD7606C_18.config();
 	// AD7606C_18.get_all_reg_val();
-	AD7606C_18.debug();
 
 	AD7606C_18.read(adc_raw_data);
 	for (uint8_t i = 0; i < 8; i++)
 	{
 		Serial.printf("[debug]0x%.2d=0x%.8x\r\n", i, adc_raw_data[i]);
 	}
+}
 
+void oled_init()
+{
+	oled.begin();
+	oled.setBusClock(1e6);
+	oled.enableUTF8Print();
+	oled.setFontDirection(0);
+	oled.setFontPosTop();
+	oled.setFont(u8g2_font_wqy12_t_gb2312);
+	oled.setDrawColor(1);
+	oled.setFontMode(1);
+}
+
+uint64_t ChipMAC;
+char ChipMAC_S[19] = {0};
+char CompileTime[20];
+void hardware_init(void)
+{
+	beep_init();
+	WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // 关闭断电检测
+	Serial.begin(5e5);
+	// Serial.println(getCpuFrequencyMhz());
+	ChipMAC = ESP.getEfuseMac();
+	sprintf(CompileTime, "%s %s", __DATE__, __TIME__);
+	for (uint8_t i = 0; i < 6; i++)
+		sprintf(ChipMAC_S + i * 3, "%02X%s", ((uint8_t *)&ChipMAC)[i], (i != 5) ? ":" : "");
+
+	Wire.begin(SDA, SCL, 1e6);
+	pd_init();
+	delay(1000);
+	Serial.printf("\r\n\r\nDetector DAS based on EVAL-AD7606CFMCZ !\r\n");
+
+	oled_init();
+	ShowBootMsg();
+	rotary_init(); // 初始化编码器
+	wifi_init();
+	adc_init();
+	// ble_phyphox_init();
 	rtc_wdt_protect_off(); // 看门狗写保护关闭，关闭后可以喂狗
 	rtc_wdt_enable();
 	rtc_wdt_set_time(RTC_WDT_STAGE0, 3000); // wdt timeout
+
+	get_sin();
+}
+
+uint8_t sin_tab[SIN_TB_SIZE];
+void get_sin(void)
+{
+	const uint16_t uPoints = SIN_TB_SIZE;
+	float x, uAng;
+	uAng = 360.000 / uPoints;
+	for (int i = 0; i < uPoints; i++)
+	{
+		x = uAng * i;
+		x = x * (3.14159 / 180); // 弧度=角度*（π/180）
+		sin_tab[i] = (255 / 2) * sin(x) + (255 / 2);
+		// printf("sin tab[%d]: %f\n", i, sin_tab[i]);
+	}
 }
 
 void disp_format_data(uint32_t *raw, uint32_t *buf)
@@ -137,136 +238,23 @@ void draw_curve(uint32_t val)
 	{
 		disp_buf[i - 1] = disp_buf[i];
 	}
-	u8g2.clearBuffer();
+	oled.clearBuffer();
 	disp_format_data(disp_buf, buffer_formated);
 	for (uint8_t i = 0; i < 127; i++)
 	{
-		u8g2.drawLine(i, 64 - buffer_formated[i], i + 1, 64 - buffer_formated[i + 1]);
+		oled.drawLine(i, 64 - buffer_formated[i], i + 1, 64 - buffer_formated[i + 1]);
 	}
-	u8g2.setFont(u8g2_font_wqy14_t_gb2312);
+	oled.setFont(u8g2_font_wqy14_t_gb2312);
 
 	char str[50];
 
-	kf_disp.predict();							  // 预测步骤
-	kf_disp.update(BC2V(adc_r_d_avg[1], PN10V0)); // 更新步骤
-	sprintf(str, "CH[1]Volt:%2.6fV", kf_disp.get_val());
-	u8g2.drawUTF8(1, 63, str);
-	u8g2.drawHLine(1, 63, 127);
-	u8g2.drawVLine(0, 0, 64);
-	u8g2.sendBuffer();
-}
-
-#define SUN 0
-#define SUN_CLOUD 1
-#define CLOUD 2
-#define RAIN 3
-#define THUNDER 4
-
-void drawWeatherSymbol(u8g2_uint_t x, u8g2_uint_t y, uint8_t symbol)
-{
-	// fonts used:
-	// u8g2_font_open_iconic_embedded_6x_t
-	// u8g2_font_open_iconic_weather_6x_t
-	// encoding values, see: https://github.com/olikraus/u8g2/wiki/fntgrpiconic
-
-	switch (symbol)
-	{
-	case SUN:
-		u8g2.setFont(u8g2_font_open_iconic_weather_6x_t);
-		u8g2.drawGlyph(x, y, 69);
-		break;
-	case SUN_CLOUD:
-		u8g2.setFont(u8g2_font_open_iconic_weather_6x_t);
-		u8g2.drawGlyph(x, y, 65);
-		break;
-	case CLOUD:
-		u8g2.setFont(u8g2_font_open_iconic_weather_6x_t);
-		u8g2.drawGlyph(x, y, 64);
-		break;
-	case RAIN:
-		u8g2.setFont(u8g2_font_open_iconic_weather_6x_t);
-		u8g2.drawGlyph(x, y, 67);
-		break;
-	case THUNDER:
-		u8g2.setFont(u8g2_font_open_iconic_embedded_6x_t);
-		u8g2.drawGlyph(x, y, 67);
-		break;
-	}
-}
-
-void drawWeather(uint8_t symbol, int degree)
-{
-	drawWeatherSymbol(0, 48, symbol);
-	u8g2.setFont(u8g2_font_logisoso32_tf);
-	u8g2.setCursor(48 + 3, 42);
-	u8g2.print(degree);
-	u8g2.print("°C"); // requires enableUTF8Print()
-}
-
-/*
-  Draw a string with specified pixel offset.
-  The offset can be negative.
-  Limitation: The monochrome font with 8 pixel per glyph
-*/
-void drawScrollString(int16_t offset, const char *s)
-{
-	static char buf[36]; // should for screen with up to 256 pixel width
-	size_t len;
-	size_t char_offset = 0;
-	u8g2_uint_t dx = 0;
-	size_t visible = 0;
-
-	u8g2.setDrawColor(0); // clear the scrolling area
-	u8g2.drawBox(0, 49, u8g2.getDisplayWidth() - 1, u8g2.getDisplayHeight() - 1);
-	u8g2.setDrawColor(1); // set the color for the text
-
-	len = strlen(s);
-	if (offset < 0)
-	{
-		char_offset = (-offset) / 8;
-		dx = offset + char_offset * 8;
-		if (char_offset >= u8g2.getDisplayWidth() / 8)
-			return;
-		visible = u8g2.getDisplayWidth() / 8 - char_offset + 1;
-		strncpy(buf, s, visible);
-		buf[visible] = '\0';
-		u8g2.setFont(u8g2_font_8x13_mf);
-		u8g2.drawStr(char_offset * 8 - dx, 62, buf);
-	}
-	else
-	{
-		char_offset = offset / 8;
-		if (char_offset >= len)
-			return; // nothing visible
-		dx = offset - char_offset * 8;
-		visible = len - char_offset;
-		if (visible > u8g2.getDisplayWidth() / 8 + 1)
-			visible = u8g2.getDisplayWidth() / 8 + 1;
-		strncpy(buf, s + char_offset, visible);
-		buf[visible] = '\0';
-		u8g2.setFont(u8g2_font_8x13_mf);
-		u8g2.drawStr(-dx, 62, buf);
-	}
-}
-
-void draw(const char *s, uint8_t symbol, int degree)
-{
-	int16_t offset = -(int16_t)u8g2.getDisplayWidth();
-	int16_t len = strlen(s);
-
-	u8g2.clearBuffer();			 // clear the internal memory
-	drawWeather(symbol, degree); // draw the icon and degree only once
-	for (;;)					 // then do the scrolling
-	{
-
-		drawScrollString(offset, s); // no clearBuffer required, screen will be partially cleared here
-		u8g2.sendBuffer();			 // transfer internal memory to the display
-
-		delay(20);
-		offset += 2;
-		if (offset > len * 8 + 1)
-			break;
-	}
+	kf_disp.predict();									// 预测步骤
+	kf_disp.update(BC2V(adc_r_d_avg[ADC_CH3], PN20V0)); // 更新步骤
+	sprintf(str, "CH[3]Volt:%2.6fV", kf_disp.get_val());
+	oled.drawUTF8(1, 63, str);
+	oled.drawHLine(1, 63, 127);
+	oled.drawVLine(0, 0, 64);
+	oled.sendBuffer();
 }
 
 void xTask_oled(void *xTask)
@@ -281,42 +269,15 @@ void xTask_oled(void *xTask)
 		// draw("It's raining cats and dogs.", RAIN, 8);
 		// draw("That sounds like thunder.", THUNDER, 12);
 		// draw("It's stopped raining", CLOUD, 15);
-		draw_curve(adc_r_d_avg[0]);
+
+		// draw_curve(adc_r_d_avg[ADC_CH3]);
+
 		vTaskDelay(100);
 	}
 }
 
 #define WINDOW_SIZE 3
 
-// 毛刺降噪算法
-void removeSpikes(int *signal, int length)
-{
-#define DESPIKES_THRESHOLD 10
-	int window[WINDOW_SIZE];
-	int i, j, sum;
-
-	for (i = 1; i < length - 1; i++)
-	{
-		// 构建滑动窗口
-		for (j = 0; j < WINDOW_SIZE; j++)
-		{
-			window[j] = signal[i - 1 + j];
-		}
-		// 计算窗口内的平均值
-		sum = 0;
-		for (j = 0; j < WINDOW_SIZE; j++)
-		{
-			sum += window[j];
-		}
-		int average = sum / WINDOW_SIZE;
-
-		// 如果当前点与平均值相差较大，则用平均值替代当前值
-		if (signal[i] - average > DESPIKES_THRESHOLD || average - signal[i] > DESPIKES_THRESHOLD)
-		{
-			signal[i] = average;
-		}
-	}
-}
 /*
  * @TODO: 去噪点&平滑滤波，not 平均滤波
  *
@@ -328,7 +289,7 @@ void xTask_dbgx(void *xTask)
 		// Serial.print("core[");
 		// Serial.print(xTaskGetAffinity(xTask));
 		// Serial.printf("]xTask_dbg \r\n");
-		Serial.printf("[%6d %6d %6d %6d][%6d %6d %6d %6d]\r\n", adc_raw_data[0], adc_raw_data[1], adc_raw_data[2], adc_raw_data[3], adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
+		Serial.printf("[%6d %6d %6d %6d][%6d %6d %6d %.6f]\r\n", adc_raw_data[0], adc_raw_data[1], adc_raw_data[2], adc_raw_data[3], adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], BC2V(adc_r_d_avg[ADC_CH8], PN5V00));
 		vTaskDelay(100);
 		// Serial.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_raw_data[0], PN10V0), BC2V(adc_raw_data[1], PN10V0), BC2V(adc_raw_data[2], PN10V0), BC2V(adc_raw_data[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
 	}
@@ -368,14 +329,19 @@ void xTask_wifi(void *xTask)
 	while (1)
 	{
 		// Serial.println("connect server -ing");
-		if (client.connect(serverIP, serverPort)) // 连接目标地址
+		if (client.connect(serverIP, serverPort)) // 连接目标地址1
 		{
 			Serial.println("connect success!");
 			// client.print("Hello world!");					 // 向服务器发送数据
 			while (client.connected() || client.available()) // 如果已连接或有收到的未读取的数据
 			{
 				conn_wifi = 1;
-				client.printf("%2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f\r\n", BC2V(adc_r_d_avg[0], PN10V0), BC2V(adc_r_d_avg[1], PN10V0), BC2V(adc_r_d_avg[2], PN10V0), BC2V(adc_r_d_avg[3], PN10V0), BC2V(adc_r_d_avg[4], PN10V0), BC2V(adc_r_d_avg[5], PN10V0), BC2V(adc_r_d_avg[6], PN10V0), BC2V(adc_r_d_avg[7], PN10V0));
+				client.printf("%2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f\r\n",
+							  BC2V(adc_r_d_avg[ADC_CH1], PN20V0), BC2V(adc_r_d_avg[ADC_CH2], PN20V0),
+							  UC2V(adc_r_d_avg[ADC_CH3], PN20V0), BC2V(adc_r_d_avg[ADC_CH4], PP5V00),
+							  BC2V(adc_r_d_avg[ADC_CH5], PP5V00), BC2V(adc_r_d_avg[ADC_CH6], PP10V0),
+							  BC2V(adc_r_d_avg[ADC_CH7], PP5V00) * adc_cali.adc_gain_ch[ADC_CH7] + adc_cali.adc_offset_ch[ADC_CH7],
+							  BC2V(adc_r_d_avg[ADC_CH8], PN5V00) * adc_cali.adc_gain_ch[ADC_CH8] + adc_cali.adc_offset_ch[ADC_CH8]);
 
 				// if (client.available()) // 如果有数据可读取
 				// {
@@ -384,7 +350,7 @@ void xTask_wifi(void *xTask)
 				// 	Serial.println(line);
 				// 	client.write(line.c_str()); // 将收到的数据回发
 				// }
-				vTaskDelay(5);
+				vTaskDelay(100);
 			}
 			conn_wifi = 0;
 			Serial.println("close clent");
@@ -399,6 +365,8 @@ void xTask_wifi(void *xTask)
 		vTaskDelay(1000);
 	}
 }
+
+#include "menu.h"
 
 void xTask_rotK(void *xTask)
 {
@@ -415,11 +383,98 @@ void xTask_rotK(void *xTask)
 			Serial.printf("rotary:%lf\n", rotary);
 		}
 		rotary_hist = rotary;
-
+		// 刷新UI
+		System_UI();
 		vTaskDelay(1);
 	}
 }
 
+void xTask_test(void *xTask)
+{
+	// 获取按键
+	sys_KeyProcess();
+	// Serial.printf("Temp:%.6fmV,%.6fmV\r\n", analogRead(TIP_ADC_PIN) / 4096.0 * 3300, analogRead(CUR_ADC_PIN) / 4096.0 * 3300);
+	// if (!Menu_System_State)
+	// {
+	// 温度闭环控制
+	// TemperatureControlLoop();
+	// 更新系统事件：：系统事件可能会改变功率输出
+	// TimerEventLoop();
+	// }
+	// 更新状态码
+	SYS_StateCode_Update();
+
+	// 刷新UI
+	//  System_UI();
+}
+
+void ble_phyphox_init()
+{
+	PhyphoxBLE::start("Detector-DAS");
+	PhyphoxBleExperiment MultiGraph;
+	MultiGraph.setTitle("Detector-DAS");
+	MultiGraph.setCategory("DigiKey创意大赛:多通道微型气相色谱采集单元");
+	MultiGraph.setDescription("基于AD7606C-18的多通道检测器数据采集系统");
+	PhyphoxBleExperiment::View firstView;
+	firstView.setLabel("FirstView"); // Create a "view"
+	PhyphoxBleExperiment::Graph detector_data_graph;
+	PhyphoxBleExperiment::Graph::Subgraph pid_data;
+	pid_data.setChannel(1, 2);
+	pid_data.setColor("ff00ff");
+	pid_data.setStyle(STYLE_LINES);
+	pid_data.setLinewidth(2);
+	detector_data_graph.addSubgraph(pid_data);
+	PhyphoxBleExperiment::Graph::Subgraph did_data;
+	did_data.setChannel(1, 3);
+	did_data.setColor("0000ff");
+	did_data.setStyle(STYLE_LINES);
+	did_data.setLinewidth(2);
+	detector_data_graph.addSubgraph(did_data);
+	PhyphoxBleExperiment::Graph::Subgraph tcd_data;
+	tcd_data.setChannel(1, 4);
+	tcd_data.setColor("0ee0ff");
+	tcd_data.setStyle(STYLE_LINES);
+	tcd_data.setLinewidth(2);
+	detector_data_graph.addSubgraph(tcd_data);
+
+	firstView.addElement(detector_data_graph);
+	MultiGraph.addView(firstView);
+	PhyphoxBLE::addExperiment(MultiGraph);
+
+	// PhyphoxBLE::printXML(&Serial);
+}
+
+float periodTime2 = 2.0; // in s
+float generateSin2(float x)
+{
+	return 1.0 * sin(x * 2.0 * PI / periodTime2);
+}
+void xTask_blex(void *xTask)
+{
+
+	float currentTime = millis() / 1000.0;
+	float sinus = generateSin2(currentTime);
+	float cosinus = generateSin2(currentTime + 0.5 * periodTime2);
+	PhyphoxBLE::write(currentTime, sinus, cosinus, cosinus);
+	delay(100);
+	// PhyphoxBLE::poll(); //Only required for the Arduino Nano 33 IoT, but it does no harm for other boards.
+}
+
+void xTask_blex2(void *xTask)
+{
+	float time;
+	float data0, data3, data4;
+	while (1)
+	{
+		time = millis() / 1000.0;
+		data0 = BC2V(adc_r_d_avg[0], PN10V0);
+		data3 = BC2V(adc_r_d_avg[3], PN10V0);
+		data4 = BC2V(adc_r_d_avg[4], PN10V0);
+		PhyphoxBLE::write(time, data0, data3, data4);
+		vTaskDelay(100);
+		PhyphoxBLE::poll(); // Only required for the Arduino Nano 33 IoT, but it does no harm for other boards.
+	}
+}
 /***************************************************use case ****************************************************************/
 
 /* 创建队列，其大小可包含5个元素Data */
@@ -500,3 +555,116 @@ void xTask_rotK(void *xTask)
 // 	}
 // 	vTaskDelete(NULL);
 // }
+
+#define SUN 0
+#define SUN_CLOUD 1
+#define CLOUD 2
+#define RAIN 3
+#define THUNDER 4
+
+void drawWeatherSymbol(u8g2_uint_t x, u8g2_uint_t y, uint8_t symbol)
+{
+	// fonts used:
+	// u8g2_font_open_iconic_embedded_6x_t
+	// u8g2_font_open_iconic_weather_6x_t
+	// encoding values, see: https://github.com/olikraus/u8g2/wiki/fntgrpiconic
+
+	switch (symbol)
+	{
+	case SUN:
+		oled.setFont(u8g2_font_open_iconic_weather_6x_t);
+		oled.drawGlyph(x, y, 69);
+		break;
+	case SUN_CLOUD:
+		oled.setFont(u8g2_font_open_iconic_weather_6x_t);
+		oled.drawGlyph(x, y, 65);
+		break;
+	case CLOUD:
+		oled.setFont(u8g2_font_open_iconic_weather_6x_t);
+		oled.drawGlyph(x, y, 64);
+		break;
+	case RAIN:
+		oled.setFont(u8g2_font_open_iconic_weather_6x_t);
+		oled.drawGlyph(x, y, 67);
+		break;
+	case THUNDER:
+		oled.setFont(u8g2_font_open_iconic_embedded_6x_t);
+		oled.drawGlyph(x, y, 67);
+		break;
+	}
+}
+
+void drawWeather(uint8_t symbol, int degree)
+{
+	drawWeatherSymbol(0, 48, symbol);
+	oled.setFont(u8g2_font_logisoso32_tf);
+	oled.setCursor(48 + 3, 42);
+	oled.print(degree);
+	oled.print("°C"); // requires enableUTF8Print()
+}
+
+/*
+  Draw a string with specified pixel offset.
+  The offset can be negative.
+  Limitation: The monochrome font with 8 pixel per glyph
+*/
+void drawScrollString(int16_t offset, const char *s)
+{
+	static char buf[36]; // should for screen with up to 256 pixel width
+	size_t len;
+	size_t char_offset = 0;
+	u8g2_uint_t dx = 0;
+	size_t visible = 0;
+
+	oled.setDrawColor(0); // clear the scrolling area
+	oled.drawBox(0, 49, oled.getDisplayWidth() - 1, oled.getDisplayHeight() - 1);
+	oled.setDrawColor(1); // set the color for the text
+
+	len = strlen(s);
+	if (offset < 0)
+	{
+		char_offset = (-offset) / 8;
+		dx = offset + char_offset * 8;
+		if (char_offset >= oled.getDisplayWidth() / 8)
+			return;
+		visible = oled.getDisplayWidth() / 8 - char_offset + 1;
+		strncpy(buf, s, visible);
+		buf[visible] = '\0';
+		oled.setFont(u8g2_font_8x13_mf);
+		oled.drawStr(char_offset * 8 - dx, 62, buf);
+	}
+	else
+	{
+		char_offset = offset / 8;
+		if (char_offset >= len)
+			return; // nothing visible
+		dx = offset - char_offset * 8;
+		visible = len - char_offset;
+		if (visible > oled.getDisplayWidth() / 8 + 1)
+			visible = oled.getDisplayWidth() / 8 + 1;
+		strncpy(buf, s + char_offset, visible);
+		buf[visible] = '\0';
+		oled.setFont(u8g2_font_8x13_mf);
+		oled.drawStr(-dx, 62, buf);
+	}
+}
+
+void draw(const char *s, uint8_t symbol, int degree)
+{
+	int16_t offset = -(int16_t)oled.getDisplayWidth();
+	int16_t len = strlen(s);
+
+	oled.clearBuffer();			 // clear the internal memory
+	drawWeather(symbol, degree); // draw the icon and degree only once
+	for (;;)					 // then do the scrolling
+	{
+
+		drawScrollString(offset, s); // no clearBuffer required, screen will be partially cleared here
+		oled.sendBuffer();			 // transfer internal memory to the display
+
+		delay(20);
+		offset += 2;
+		if (offset > len * 8 + 1)
+			break;
+	}
+}

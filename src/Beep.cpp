@@ -1,14 +1,14 @@
 #include "beep.h"
 
-
 // BEEP
-uint8_t BEEP_Channel = 2; // 通道
+uint8_t BEEP_Channel = 1; // 通道
 
 void beep_init(void)
 {
     pinMode(BEEP_PIN, OUTPUT);
     ledcAttachPin(BEEP_PIN, BEEP_Channel); // 将通道与对应的引脚连接
     ledcSetup(BEEP_Channel, 0, 8);         // 设置通道
+    // ledcWriteTone(BEEP_Channel, 10e3);
 }
 
 void SetTone(double freq)

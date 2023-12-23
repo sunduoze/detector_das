@@ -4,6 +4,8 @@
 #include "arduino.h"
 #include <SPI.h>
 
+#define ADC_ALL_CH 8
+
 #define PN20V0 0.00015258f
 #define PN12V5 0.00009536f
 #define PN10V0 0.00007629f
@@ -11,15 +13,27 @@
 #define PN5V00 0.00003815f
 #define PN2V50 0.00001907f
 
-#define P12V5 0.00004768f
-#define P10V0 0.00003815f
-#define P5V00 0.00001907f
+#define PP12V5 0.00004768f
+#define PP10V0 0.00003815f
+#define PP5V00 0.00001907f
 
 /*BIPOLAR_CODE_TO_VOLT*/
 // #define BC2V(code, range_lsb) (((code - 1) & 0x20000) == 0x20000) ? (-((code)-0x40000) * -range_lsb) : ((code) * range_lsb)
 #define BC2V(code, range_lsb) (code) * range_lsb
 /*UNIPOLAR_CODE_TO_VOLT*/
 #define UC2V(code, range_lsb) (code) * range_lsb
+
+enum
+{
+	ADC_CH1 = 0x0,
+	ADC_CH2 = 0x1,
+	ADC_CH3 = 0x2,
+	ADC_CH4 = 0x3,
+	ADC_CH5 = 0x4,
+	ADC_CH6 = 0x5,
+	ADC_CH7 = 0x6,
+	ADC_CH8 = 0x7
+};
 
 class AD7606C
 {
@@ -89,7 +103,7 @@ public:
 	int32_t fast_read(int32_t *data); // fast read last conv raw values from ADC
 	void config(void);
 	void debug(void);
-	void get_id(void);
+	uint8_t check_id(void);
 	void get_all_reg_val(void);
 
 	void test_reg_rw(void);

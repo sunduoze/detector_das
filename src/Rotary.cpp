@@ -30,7 +30,8 @@ void rotary_init(void)
     attachInterrupt(ROTARY_A, sys_Counter_IRQHandler, CHANGE);
 
     // 初始化编码器设置(测试默认)
-    sys_Counter_Set(-5.5, 5.5, 0.1, 0.0);
+    // sys_Counter_Set(-5.5, 5.5, 0.1, 0.0);
+    sys_Counter_Set(-1.2, 6.6, 0.1, 3.14);
 }
 
 /**
@@ -120,7 +121,7 @@ double sys_Counter_Get(void)
 {
     if (Count != CountLast)
     {
-        // CountLast = Count;
+        CountLast = Count;
         Serial.printf("C:%lf\n", Count);
     }
     // }else printf("C:nc\n", Count);

@@ -3,6 +3,7 @@
 
 #include "task.h"
 extern uint32_t BoostTimer;
+extern float BoostTime;
 
 extern uint32_t EventTimerUpdate;
 void TimerUpdateEvent(void);
