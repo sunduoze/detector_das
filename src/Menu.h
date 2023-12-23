@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+extern uint8_t ble_status;
+extern uint8_t wifi_status;
+extern uint8_t pd_status;
+
 extern uint8_t Menu_System_State;
 extern uint32_t pages_Tip_Display_timer;
 extern uint8_t Menu_JumpAndExit;

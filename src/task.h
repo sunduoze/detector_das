@@ -15,6 +15,7 @@
 #include "beep.h"
 #include "externdraw.h"
 #include "menu.h"
+#include "AD7606C.h"
 
 #define PINNED_TO_CORE1 0
 #define PINNED_TO_CORE2 1
@@ -46,6 +47,7 @@
 #define SCREEN_PAGE_NUM 8
 #define SCREEN_FONT_ROW 4
 
+extern float adc_disp_val[ADC_ALL_CH];
 extern spinlock_t task_lock;
 extern uint8_t rotary_dir;
 extern uint8_t volume;
@@ -53,6 +55,7 @@ extern uint8_t sin_tab[SIN_TB_SIZE];
 extern char ChipMAC_S[19];
 
 extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled;
+extern KalmanFilter kf_main_ui;
 
 extern void hardware_init(void);
 extern void ble_phyphox_init();

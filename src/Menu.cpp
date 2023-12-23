@@ -1,5 +1,6 @@
 #include "task.h"
 #include "event.h"
+
 // 菜单系统状态 0:自动退出 1:运行菜单系统
 uint8_t Menu_System_State = false;
 // 跳转即退出菜单，该标志位适用于快速打开菜单设置，当遇到跳转操作时将保存设置并退出菜单
@@ -14,15 +15,11 @@ int32_t real_Level_Id, Pos_Id, Back_Id = -1;              // 索引值
 uint32_t pages_Tip_Display_timer = 0;
 // 默认无动作后的1500ms关闭悬浮角标显示
 #define pages_Tip_Display_Timeout 1500
-char *TempCTRL_Status_Mes[] = {
-    (char *)"错误",
-    (char *)"停机",
-    (char *)"休眠",
-    (char *)"提温",
-    (char *)"正常",
-    (char *)"加热",
-    (char *)"维持",
-};
+char *adc_meas_func[] = {
+    (char *)"DCV",
+    (char *)"ACV",
+    (char *)"DCI",
+    (char *)"ACI"};
 /*/////////////////////////////////////////////////////////////////////
 
     @需要手动设置的项目
@@ -87,7 +84,11 @@ uint8_t RotaryDirection = false;
 uint8_t HandleTrigger = HANDLETRIGGER_VibrationSwitch;
 uint8_t Language = LANG_Chinese;
 uint8_t MenuListMode = false;
-uint8_t BLE_State = true;
+
+uint8_t ble_status = true;
+uint8_t wifi_status = false;
+uint8_t pd_status = false;
+
 uint8_t TipID = 0;
 uint8_t TipTotal = 1;
 
@@ -131,7 +132,8 @@ enum TEMP_CTRL_STATUS_CODE
 };
 // bool Counter_LOCK_Flag = false;
 uint8_t TempCTRL_Status = TEMP_STATUS_OFF;
-char *TipName = (char *)"A";
+// char *TipName = (char *)"A";
+char *title_name = (char *)"Detector DAS";
 double TipTemperature = 222.33;
 #define MaxTipConfig 10
 #define SCREEN_ROW 64
@@ -153,7 +155,7 @@ uint8_t *Switch_space[] = {
     &Language,
     &TipID,
 
-    &BLE_State,
+    &ble_status,
     &MenuListMode,
 };
 
@@ -552,6 +554,22 @@ void System_PIDMenu_Init(void)
     Next_Menu();
     Serial.printf("菜单状态:%d\n", Menu_System_State);
 }
+// 实现四舍五入函数
+double round_to_decimal(double num, int decimal_places)
+{
+    // 小数位数最长不超过6
+    if (decimal_places > 6)
+    {
+        decimal_places = 6;
+    }
+
+    // 查表法，预先计算10的幂
+    static const double powersOf10[] = {1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0};
+
+    // 直接四舍五入
+    double multiplier = powersOf10[decimal_places];
+    return round(num * multiplier) / multiplier;
+}
 
 /***
  * @description: 初始化菜单
@@ -585,123 +603,179 @@ void System_UI_Init(void)
     // 输出解锁
     // PWMOutput_Lock = false;
 }
+
+#define LPF_Ts 0.001f
+#define PI 3.1415926f
+
+float one_order_low_pass_filter(const float data_in, const float fc)
+{
+    static float alpha, data_out_last = -999.999f;
+    float delta, data_temp;
+    delta = 2.0f * PI * fc * LPF_Ts;
+    alpha = delta / (delta + 1.0f);
+
+    if (data_out_last != -999.999f)
+    {
+        data_temp = (alpha * data_in + (1.0f - alpha) * data_out_last);
+    }
+    else
+    {
+        data_temp = data_in;
+    }
+    data_out_last = data_temp;
+    return data_temp;
+}
+void disp_wifi_pd_ble_status()
+{
+    oled.setFont(u8g2_font_open_iconic_embedded_1x_t);
+    if (ble_status)
+    {
+        oled.drawGlyph(100, 0, 0x4A);
+    }
+    else
+    {
+        oled.drawGlyph(120, 0, 0x41);
+    }
+
+    if (wifi_status)
+    {
+        oled.drawGlyph(120, 0, 0x50);
+    }
+    else
+    {
+        oled.drawGlyph(120, 0, 0x47);
+    }
+
+    if (pd_status)
+    {
+        oled.drawGlyph(110, 0, 0x49);
+    }
+    else
+    {
+        oled.drawGlyph(110, 0, 0x40);
+    }
+}
+
+/***
+ * @description: 绘制电压状态条
+ * @param bool color 颜色
+ * @return {*}
+ */
+void DrawStatusBar(bool color, float raw_disp_val)
+{
+    static float kf_val;
+    uint32_t temp = 0;
+    uint32_t cnt = 0;
+    // kf_main_ui.predict();            // 预测步骤
+    // kf_main_ui.update(raw_disp_val); // 更新步骤
+    // kf_val = kf_main_ui.get_val();
+    if (abs(kf_val - raw_disp_val) > raw_disp_val * 0.1)
+    {
+        // 偏差过大时预热滤波器
+        for (int i = 0; i < 1e4; ++i)
+        {
+            float input = raw_disp_val;
+            float output = one_order_low_pass_filter(input, 10.0f); // 1.0f 是截止频率，请根据实际需求设置
+        }
+    }
+    if (abs(kf_val - raw_disp_val) > raw_disp_val * 0.005)
+    {
+        if (cnt++ > 20)
+        {
+            kf_val = 0;
+            cnt = 0;
+        }
+            
+    }
+
+    kf_val = one_order_low_pass_filter(raw_disp_val, 0.2f);
+    oled.setDrawColor(color);
+    // 与平均条偏差条
+    // 框
+    oled.drawFrame(0, 53, 103, 11);
+
+    // 条
+    if (raw_disp_val > kf_val)
+    {
+        oled.drawBox(0, 53, 0, 11);
+        oled.drawBox(51, 53, map(raw_disp_val * 10000, kf_val * 10000, kf_val * 10003, 0, 51), 11);
+    }
+    else
+    {
+        temp = map(raw_disp_val * 10000, kf_val * 10000, kf_val * 9997, 0, 51);
+        oled.drawBox(51, 53, 0, 11);
+        oled.drawBox(51 - temp, 53, temp, 11);
+    }
+
+    // 功率条
+    oled.drawFrame(104, 53, 23, 11);
+    oled.drawBox(104, 53, map(raw_disp_val, -20, 20, 0, 23), 11);
+
+    oled.drawHLine(117, 51, 11);
+    oled.drawPixel(103, 52);
+    oled.drawPixel(127, 52);
+
+    //////////////进入反色////////////////////////////////
+    oled.setDrawColor(2);
+
+    // 画指示针
+    // Draw_Slow_Bitmap(map(PID_Setpoint, TipMinTemp, TipMaxTemp, 5, 98) - 4, 54, PositioningCursor, 8, 8);
+
+    oled.setCursor(2, 53);
+    oled.printf("%2.5f", round_to_decimal(kf_val, 5));
+
+    oled.setCursor(105, 53);
+    oled.printf("%d%%", map(raw_disp_val, -20, 20, 0, 100));
+
+    oled.setDrawColor(color);
+}
+
+void main_ui_disp(uint8_t disp_type, float disp_val)
+{
+    oled.drawUTF8(0, 1, title_name); // 显示系统名称
+    // Draw_Slow_Bitmap(72, 0, C_table[TEMP_STATUS_OFF], 14, 14);// 状态图标
+    oled.drawUTF8(1, 12, adc_meas_func[disp_type]); // DCV
+    disp_wifi_pd_ble_status();
+    ///////////////////////////////////////////////////////////////////////////////////
+    // 显示当前电压或电流
+    oled.setFont(u8g2_font_logisoso26_tn);
+    oled.setCursor(0, 24);
+    oled.printf("%-2.5f", disp_val);
+    ///////////////////////////////////////////////////////////////////////////////////
+    oled.setFont(u8g2_font_wqy12_t_gb2312);
+    // 右上角运行指示角标
+
+    uint8_t TriangleSize = map(disp_val, -20.0, 20, 18, 0);
+    // Disp.drawTriangle(100 + TriangleSize, 0, 127, 0, 127, 27 - TriangleSize);
+    oled.drawTriangle((119 - 12) + TriangleSize, 12, 125, 12, 125, (18 + 12) - TriangleSize);
+    // Draw_Slow_Bitmap(114, 15, PositioningCursor, 8, 8);
+    // Disp.drawTriangle(103, 0, 127, 0, 127, 24);
+
+    /////////////////////////////////////绘制遮罩层//////////////////////////////////////////////
+    oled.setDrawColor(2);
+    // 几何图形切割
+    oled.drawBox(0, 12, 96, 40);
+    oled.drawTriangle(96, 12, 96, 52, 125, 42);
+    oled.drawTriangle(125, 42, 96, 52, 118, 52);
+    oled.setDrawColor(1);
+
+    DrawStatusBar(1, disp_val); // 绘制底部状态条
+    Display();
+}
 // 系统UI
 void System_UI(void)
 {
     oled.clearBuffer();
-
     if (Menu_System_State)
     {
         Menu_Control();
     }
     else
     {
-        // 睡眠模式屏保入口
-        // if (SleepEvent && SleepScreenProtectFlag)
-        //     RunSleepLoop();
-        // else
-        // {
-        // char buffer[50];
-        // for (uint8_t i = 0;i < 5;i++) {
-        //     oled.setCursor(0, 12 * i + 1);
-
-        //     switch (i) {
-        //     case 0: sprintf(buffer, "状态%d:%s 控温:%s", TempCTRL_Status, TempCTRL_Status_Mes[TempCTRL_Status], (PIDMode == 1) ? "PID" : "模糊"); break;
-        //     case 1: sprintf(buffer, "设定%.0lf°C 当前%.0lf°C", PID_Setpoint, TipTemperature); break;
-        //     case 2: sprintf(buffer, "ADC:%d PID:%.0lf", LastADC, PID_Output); break;
-        //     case 3: sprintf(buffer, "E:%.2lf V2:%.2lf", Get_MainPowerVoltage(), ESP32_ADC2Vol(analogRead(POWER_ADC_PIN))); break;
-        //     case 4: sprintf(buffer, "%.3lf %.3lf %.3lf", aggKp, aggKi, aggKd); break;
-        //     }
-        //     oled.print(buffer);
-        // }
-
-        ///////////////////////////////////////////////////////////////////////////////////
-
-        // 显示烙铁头名称
-        oled.drawUTF8(0, 1, TipName);
-        // 温度控制状态图标
-        Draw_Slow_Bitmap(74, 37, C_table[TempCTRL_Status], 14, 14);
-        // 显示中文状态信息
-        oled.drawUTF8(91, 40, TempCTRL_Status_Mes[TempCTRL_Status]);
-
-        // // 欠压警报
-        // if (UnderVoltageEvent)
-        // {
-        //     if ((millis() / 1000) % 2)
-        //     {
-        //         // 欠压告警图标
-        //         Draw_Slow_Bitmap(74, 21, Battery_NoPower, 14, 14);
-        //     }
-        //     else
-        //     {
-        //         // 主电源电压
-        //         oled.setCursor(74, 24);
-        //         oled.printf("%.1fV", 123.45f);
-        //     }
-        // }
-        // else
-        // {
-        // 显示蓝牙图标
-        if (BLE_State)
-            Draw_Slow_Bitmap(92, 25, IMG_BLE_S, 9, 11);
-        // }
-
-        ///////////////////////////////////////////////////////////////////////////////////
-        // 显示当前温度
-        oled.setFont(u8g2_font_logisoso38_tr);
-        oled.setCursor(0, 12);
-
-        if (TempCTRL_Status == TEMP_STATUS_ERROR)
+        main_ui_disp(0, round_to_decimal(adc_disp_val[ADC_CH3], 5));
+        if (SYSKey == 2) // 编码器长按按键进入菜单
         {
-            if ((millis() / 250) % 2)
-                oled.print("---");
-        }
-        else
-        {
-            // 如果温度波动足够小，则显示当前温度为设定温度
-            //  if (TempGap < 10) oled.printf("%.0lf", PID_Setpoint);  //显示"假"温度(设定温度)
-            //  else oled.printf("%.0lf", TipTemperature);    //显示真实温度
-
-            oled.printf("%.0lf", TipTemperature); // 显示真实温度
-        }
-
-        oled.setFont(u8g2_font_wqy12_t_gb2312);
-        ///////////////////////////////////////////////////////////////////////////////////
-
-        // 右上角运行指示角标
-        // if (POWER > 0 && PWM_WORKY)
-        // {
-        //     uint8_t TriangleSize = map(POWER, 0, 255, 16, 0);
-        //     // oled.drawTriangle(100 + TriangleSize, 0, 127, 0, 127, 27 - TriangleSize);
-        //     oled.drawTriangle((119 - 12) + TriangleSize, 12, 125, 12, 125, (18 + 12) - TriangleSize);
-        //     // Draw_Slow_Bitmap(114, 15, PositioningCursor, 8, 8);
-        //     // oled.drawTriangle(103, 0, 127, 0, 127, 24);
-        // }
-
-        /////////////////////////////////////绘制遮罩层//////////////////////////////////////////////
-        oled.setDrawColor(2);
-        // 几何图形切割
-        oled.drawBox(0, 12, 96, 40);
-        oled.drawTriangle(96, 12, 96, 52, 125, 42);
-        oled.drawTriangle(125, 42, 96, 52, 118, 52);
-        oled.setDrawColor(1);
-
-        // 绘制底部状态条
-        DrawStatusBar(1);
-
-        // 如果当前是处于爆发技能，则显示技能剩余时间进度条
-        // if (TempCTRL_Status == TEMP_STATUS_BOOST && DisplayFlashTick % 2)
-        // {
-        //     uint8_t BoostTimeBar = map(millis() - BoostTimer, 0, BoostTime * 1000, 0, 14);
-        //     oled.drawBox(74, 37, 14, BoostTimeBar);
-        // }
-        // }
-        Display();
-        // 编码器长按按键进入菜单
-        if (SYSKey == 2)
-        {
-            // 初始化菜单
-            System_Menu_Init();
+            System_Menu_Init(); // 初始化菜单
         }
     }
 }
@@ -776,7 +850,7 @@ void SYS_Save(void)
     // Pop_Windows("保存中 请勿切断电源");
 
     // 软盘图标
-    DrawMsgBox("保存中");
+    DrawMsgBox((char *)"保存中");
     Draw_Slow_Bitmap_Resize(128 - 28 - 4, 64 - 28 - 4, Save + 1, Save[0], Save[0], 28, 28);
     Display();
 
@@ -832,7 +906,7 @@ void SYS_Save(void)
     // file.write((uint8_t*) &MenuListMode, sizeof(MenuListMode));
 
     // file.close();
-    Log(LOG_OK, "存档保存成功!");
+    Log(LOG_OK, (char *)"存档保存成功!");
 
     // 启用中断
     interrupts();
@@ -1441,13 +1515,13 @@ void Menu_Control()
         *Slide_space[Slide_space_Scroll].x = sys_Counter_Get() - 1;
         if ((int)*Slide_space[Slide_space_Scroll].x >= Slide_space[Slide_space_Scroll].max)
         {
-            Log(LOG_INFO, "尝试往下滚动");
+            Log(LOG_INFO, (char *)"尝试往下滚动");
             MenuLevel[real_Level_Id].x++;
             sys_Counter_SetVal(Slide_space[Slide_space_Scroll].max);
         }
         else if ((int)*Slide_space[Slide_space_Scroll].x <= -1)
         {
-            Log(LOG_INFO, "尝试往上滚动");
+            Log(LOG_INFO, (char *)"尝试往上滚动");
             MenuLevel[real_Level_Id].x--;
             sys_Counter_SetVal(1);
         }

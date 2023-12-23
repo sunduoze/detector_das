@@ -5,6 +5,7 @@
         "system_error": "cpp",
         "sstream": "cpp",
         "kalman_filter.h": "c",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "cmath": "cpp"
     }
 }

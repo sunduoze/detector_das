@@ -4,7 +4,7 @@ uint8_t POWER = 0;
 // 温度限制
 #define TipMaxTemp 250
 #define TipMinTemp 0
-double PID_Setpoint = 1.234;
+double PID_Setpoint = 66.66;
 
 void EnterLogo(void)
 {
@@ -379,44 +379,6 @@ void Log(MESSAGETYPE type, char *s)
     // Pop_Windows(s);
 }
 
-/***
- * @description: 绘制温度状态条
- * @param bool color 颜色
- * @return {*}
- */
-void DrawStatusBar(bool color)
-{
-    oled.setDrawColor(color);
-    // 温度条
-    // 框
-    oled.drawFrame(0, 53, 103, 11);
-    // 条
-    // if (TipTemperature <= TipMaxTemp)
-    //     oled.drawBox(0, 53, map(22, 23, TipMaxTemp, 5, 98), 11);
-
-    // 功率条
-    oled.drawFrame(104, 53, 23, 11);
-    oled.drawBox(104, 53, map(123, 0, 255, 0, 23), 11);
-
-    oled.drawHLine(117, 51, 11);
-    oled.drawPixel(103, 52);
-    oled.drawPixel(127, 52);
-
-    //////////////进入反色////////////////////////////////
-    oled.setDrawColor(2);
-
-    // 画指示针
-    Draw_Slow_Bitmap(map(PID_Setpoint, TipMinTemp, TipMaxTemp, 5, 98) - 4, 54, PositioningCursor, 8, 8);
-
-    oled.setCursor(2, 53);
-    oled.printf("%.0f", PID_Setpoint);
-
-    oled.setCursor(105, 53);
-    oled.printf("%d%%", map(POWER, 0, 255, 0, 100));
-
-    // arduboy.setCursor(105, 55); arduboy.print(map(PID_Output, 255, 0, 0, 100)); arduboy.print(F("%")); //功率百分比
-    oled.setDrawColor(color);
-}
 
 /***
  * @description: 短文本编辑器

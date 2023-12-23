@@ -6,7 +6,6 @@
 #endif
 #include "soc/rtc_wdt.h" // 设置看门狗应用
 
-#include "AD7606C.cpp"
 #include "PD_UFP.h"
 #include "kalman_filter.h"
 #include "event.h"
@@ -21,6 +20,7 @@ uint8_t volume = true;
 int32_t adc_raw_data[ADC_ALL_CH];
 int32_t adc_raw_data_sum_256[ADC_ALL_CH] = {0, 0};
 int32_t adc_r_d_avg[ADC_ALL_CH]; // adc raw data average
+float adc_disp_val[ADC_ALL_CH];
 
 uint8_t conn_wifi = 0;
 
@@ -39,6 +39,7 @@ const IPAddress serverIP(192, 168, 100, 25); // 欲访问的服务端IP地址
 uint16_t serverPort = 1234;					 // 服务端口号
 
 KalmanFilter kf_disp(0.00f, 1.0f, 10.0f, 100.0f);
+KalmanFilter kf_main_ui(0.00f, 1.0f, 100.0f, 20000.0f);
 
 WiFiClient client; // 声明一个ESP32客户端对象，用于与服务器进行连接
 AD7606C_Serial AD7606C_18(ADC_CONVST, ADC_BUSY);
@@ -46,8 +47,9 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* c
 // U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA); // ESP32 Thing, HW I2C with pin remapping
 class PD_UFP_c PD_UFP;
 
-void pd_init(void)
+uint8_t pd_init(void)
 {
+	uint8_t ret = 0;
 	uint16_t timeout = 2000;
 	PD_UFP.init(PD_POWER_OPTION_MAX_20V);
 	Serial.printf("PD_UFP.init-ing\r\n");
@@ -62,30 +64,31 @@ void pd_init(void)
 				Serial.printf("PD 20V ENABLE Sucess\r\n");
 				SetSound(BootSound); // 播放音效
 				break;
-
 				// PD_UFP.set_led(1);      // Output reach 20V and 1.5A, set indicators on
 			}
 			else
 			{
 				PD_UFP.set_output(0); // Turn off load switch
 				Serial.printf("DISABLE\r\n");
-				// SetSound(TipRemove);
+				ret = 1;
 				break;
 				// PD_UFP.blink_led(400);  // Output less than 20V or 1.5A, blink LED
 			}
 		}
 		if (timeout-- <= 1)
 		{
-			Serial.printf("power not ready\r\n");
-			// SetSound(TipRemove);
+			Serial.printf("PD power not ready\r\n");
+			ret = 2;
 			break;
 		}
 		vTaskDelay(1);
 	}
+	return ret;
 }
 
-void wifi_init()
+uint8_t wifi_init()
 {
+	uint8_t ret = 0;
 	WiFi.mode(WIFI_STA);
 	WiFi.setSleep(false); // 关闭STA模式下wifi休眠，提高响应速度
 	WiFi.begin(ssid, password);
@@ -103,25 +106,29 @@ void wifi_init()
 		if (i <= 1)
 		{
 			Serial.print("\r\nWifi connect failed\r\n");
+			ret = 1;
 			break;
 		}
 	}
 
-	if (i > 50)
+	if (ret == 0)
 	{
-		Serial.printf("Connecting to %s\r\n", ssid);
+		if (i > 50)
+		{
+			Serial.printf("Connecting to %s\r\n", ssid);
+		}
+		Serial.println("IP address: ");
+		Serial.println(WiFi.localIP());
+		Serial.println("MAC address: ");
+		Serial.println(WiFi.macAddress());
+		Serial.println("DNS address: ");
+		Serial.println(WiFi.dnsIP());
+		Serial.println("Gateway address: ");
+		Serial.println(WiFi.gatewayIP());
+		Serial.println("Subnet mask: ");
+		Serial.println(WiFi.subnetMask());
 	}
-
-	Serial.println("IP address: ");
-	Serial.println(WiFi.localIP());
-	Serial.println("MAC address: ");
-	Serial.println(WiFi.macAddress());
-	Serial.println("DNS address: ");
-	Serial.println(WiFi.dnsIP());
-	Serial.println("Gateway address: ");
-	Serial.println(WiFi.gatewayIP());
-	Serial.println("Subnet mask: ");
-	Serial.println(WiFi.subnetMask());
+	return ret;
 }
 
 void adc_init()
@@ -147,7 +154,7 @@ void adc_init()
 void oled_init()
 {
 	oled.begin();
-	oled.setBusClock(1e6);
+	oled.setBusClock(4e5);
 	oled.enableUTF8Print();
 	oled.setFontDirection(0);
 	oled.setFontPosTop();
@@ -171,14 +178,17 @@ void hardware_init(void)
 		sprintf(ChipMAC_S + i * 3, "%02X%s", ((uint8_t *)&ChipMAC)[i], (i != 5) ? ":" : "");
 
 	Wire.begin(SDA, SCL, 1e6);
-	pd_init();
+	if (pd_init() == 0)
+	{
+		pd_status = true;
+	}
 	delay(1000);
 	Serial.printf("\r\n\r\nDetector DAS based on EVAL-AD7606CFMCZ !\r\n");
 
 	oled_init();
 	ShowBootMsg();
 	rotary_init(); // 初始化编码器
-	wifi_init();
+
 	adc_init();
 	// ble_phyphox_init();
 	rtc_wdt_protect_off(); // 看门狗写保护关闭，关闭后可以喂狗
@@ -286,6 +296,15 @@ void xTask_dbgx(void *xTask)
 {
 	while (1)
 	{
+		adc_disp_val[ADC_CH1] = BC2V(adc_r_d_avg[ADC_CH1], PN20V0) * adc_cali.adc_gain_ch[ADC_CH1] + adc_cali.adc_offset_ch[ADC_CH1];
+		adc_disp_val[ADC_CH2] = BC2V(adc_r_d_avg[ADC_CH2], PN20V0) * adc_cali.adc_gain_ch[ADC_CH2] + adc_cali.adc_offset_ch[ADC_CH2];
+		adc_disp_val[ADC_CH3] = BC2V(adc_r_d_avg[ADC_CH3], PN20V0) * adc_cali.adc_gain_ch[ADC_CH3] + adc_cali.adc_offset_ch[ADC_CH3];
+		adc_disp_val[ADC_CH4] = BC2V(adc_r_d_avg[ADC_CH4], PP5V00) * adc_cali.adc_gain_ch[ADC_CH4] + adc_cali.adc_offset_ch[ADC_CH4];
+		adc_disp_val[ADC_CH5] = BC2V(adc_r_d_avg[ADC_CH5], PP5V00) * adc_cali.adc_gain_ch[ADC_CH5] + adc_cali.adc_offset_ch[ADC_CH5];
+		adc_disp_val[ADC_CH6] = BC2V(adc_r_d_avg[ADC_CH6], PP10V0) * adc_cali.adc_gain_ch[ADC_CH6] + adc_cali.adc_offset_ch[ADC_CH6];
+		adc_disp_val[ADC_CH7] = BC2V(adc_r_d_avg[ADC_CH7], PP5V00) * adc_cali.adc_gain_ch[ADC_CH7] + adc_cali.adc_offset_ch[ADC_CH7];
+		adc_disp_val[ADC_CH8] = BC2V(adc_r_d_avg[ADC_CH8], PN5V00) * adc_cali.adc_gain_ch[ADC_CH8] + adc_cali.adc_offset_ch[ADC_CH8];
+
 		// Serial.print("core[");
 		// Serial.print(xTaskGetAffinity(xTask));
 		// Serial.printf("]xTask_dbg \r\n");
@@ -326,6 +345,10 @@ void xTask_adcx(void *xTask)
 
 void xTask_wifi(void *xTask)
 {
+	if (wifi_init() == 0)
+	{
+		wifi_status = true;
+	}
 	while (1)
 	{
 		// Serial.println("connect server -ing");
