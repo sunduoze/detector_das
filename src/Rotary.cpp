@@ -50,6 +50,7 @@ void sys_Counter_Set(double min, double max, double step, double c)
     Count_max = max * ROTARY_TYPE;
     Count_step = step;
     Count = constrain(c * ROTARY_TYPE, Count_min, Count_max);
+#ifdef ROTARY_DEBUG
     Serial.print("set rotary -> min:");
     Serial.print(Count_min);
     Serial.print(" max:");
@@ -60,6 +61,7 @@ void sys_Counter_Set(double min, double max, double step, double c)
     Serial.print(c);
     Serial.print(" cur-cnt:");
     Serial.println(Count);
+#endif // ROTARY_DEBUG
 }
 
 void sys_Counter_SetVal(double c)
@@ -122,7 +124,9 @@ double sys_Counter_Get(void)
     if (Count != CountLast)
     {
         CountLast = Count;
+#ifdef ROTARY_DEBUG
         Serial.printf("C:%lf\n", Count);
+#endif // ROTARY_DEBUG
     }
     // }else printf("C:nc\n", Count);
     return Count / ROTARY_TYPE;
@@ -162,7 +166,10 @@ static void Write_RButton_FIFO(uint8_t State)
     TimerUpdateEvent();
 
     RButton_FIFO[RButton_FIFO_pwrite] = State;
+#ifdef ROTARY_DEBUG
     Serial.printf("FIFO wt[%d]=%d\n", RButton_FIFO_pwrite, State);
+#endif // ROTARY_DEBUG
+
     // 写指针移位
     RButton_FIFO_pwrite++;
     // 按键缓冲区数据大小+1
@@ -171,7 +178,9 @@ static void Write_RButton_FIFO(uint8_t State)
     // 循环写
     if (RButton_FIFO_pwrite >= RButton_FIFO_Size)
         RButton_FIFO_pwrite = 0;
+#ifdef ROTARY_DEBUG
     Serial.printf("FIFO buf sz:%d\n\n", RButton_FIFO_BufferSize);
+#endif // ROTARY_DEBUG
 }
 /***
  * @description: 读按键FIFO
@@ -187,14 +196,21 @@ static uint8_t Read_RButton_FIFO(void)
 
     // 从按键FIFO缓存读取数据
     uint8_t res = RButton_FIFO[RButton_FIFO_pread];
+#ifdef ROTARY_DEBUG
     Serial.printf("FIFO rd[%d]=%d\n", RButton_FIFO_pread, res);
+#endif // ROTARY_DEBUG
+
     // 读指针移位
     RButton_FIFO_pread++;
     RButton_FIFO_BufferSize--;
     // 循环写
     if (RButton_FIFO_pread >= RButton_FIFO_Size)
         RButton_FIFO_pread = 0;
+
+#ifdef ROTARY_DEBUG
     Serial.printf("FIFO buf sz:%d\n\n", RButton_FIFO_BufferSize);
+#endif // ROTARY_DEBUG
+
     return res;
 }
 /***
@@ -204,7 +220,10 @@ static uint8_t Read_RButton_FIFO(void)
  */
 void sys_Counter_click(void)
 {
+
+#ifdef ROTARY_DEBUG
     Serial.printf("trig 1 click tsk\n");
+#endif // ROTARY_DEBUG
     SetSound(Beep1);
     Write_RButton_FIFO(1);
 }
@@ -215,7 +234,10 @@ void sys_Counter_click(void)
  */
 void sys_Counter_longclick(void)
 {
+#ifdef ROTARY_DEBUG
     Serial.printf("trig long click\n");
+#endif // ROTARY_DEBUG
+
     SetSound(Beep2);
     Write_RButton_FIFO(2);
 }
@@ -226,7 +248,10 @@ void sys_Counter_longclick(void)
  */
 void sys_Counter_doubleclick(void)
 {
+#ifdef ROTARY_DEBUG
     Serial.printf("trig 2 click\n");
+#endif // ROTARY_DEBUG
+
     SetSound(Beep2);
     Write_RButton_FIFO(3);
 }

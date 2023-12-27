@@ -5,6 +5,11 @@
 
 #define ROTARY_TYPE 2 // 2  1:EC11
 
+// #define ROTARY_DEBUG
+#ifdef ROTARY_DEBUG
+#warning "ROTARY_DEBUG"
+#endif // ROTARY_DEBUG
+
 extern uint8_t SYSKey;
 extern bool Counter_LOCK_Flag;
 

@@ -3,6 +3,11 @@
 
 #include "task.h"
 
+// #define DEBUG_EXT_DRAW
+#ifdef DEBUG_EXT_DRAW
+#WARNING "DEBUG_EXT_DRAW"
+#endif
+
 enum MESSAGETYPE
 {
     LOG_INFO = 0,

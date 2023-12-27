@@ -6,6 +6,12 @@
         "sstream": "cpp",
         "kalman_filter.h": "c",
         "typeinfo": "cpp",
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "ad5272.h": "c",
+        "task.h": "c",
+        "array": "c",
+        "string": "c",
+        "string_view": "c",
+        "*.tcc": "c"
     }
 }

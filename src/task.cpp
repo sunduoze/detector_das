@@ -11,6 +11,8 @@
 #include "event.h"
 #include "rotary.h"
 #include "beep.h"
+#include "ad5272.h"
+
 uint8_t *C_table[] = {c1, c2, c3, Lightning, c5, c6, c7};
 
 uint8_t rotary_dir = false;
@@ -24,16 +26,12 @@ float adc_disp_val[ADC_ALL_CH];
 
 uint8_t conn_wifi = 0;
 
-struct adc_calibration_
-{
-	float adc_gain_ch[ADC_ALL_CH];
-	float adc_offset_ch[ADC_ALL_CH];
-} adc_cali;
+adc_calibration_ adc_cali;
 
-const char *ssid = "CandyTime_857112"; // wifi名
-const char *password = "23399693";	   // wifi密码
-const char *ssid_bk = "GBA";		   // wifi名
-const char *password_bk = "XTyjy8888"; // wifi密码
+char ssid[] = "CandyTime_857112"; // wifi名
+char password[] = "23399693";	  // wifi密码
+char ssid_bk[] = "GBA";			  // wifi名
+char password_bk[] = "XTyjy8888"; // wifi密码
 
 const IPAddress serverIP(192, 168, 100, 25); // 欲访问的服务端IP地址
 uint16_t serverPort = 1234;					 // 服务端口号
@@ -46,6 +44,9 @@ AD7606C_Serial AD7606C_18(ADC_CONVST, ADC_BUSY);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA); // ESP32 Thing, HW I2C with pin remapping
 // U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA); // ESP32 Thing, HW I2C with pin remapping
 class PD_UFP_c PD_UFP;
+
+#define POT_ADDR 0x2E
+AD5272 digital_pot(POT_ADDR); // creates communication object with address 0x2E
 
 uint8_t pd_init(void)
 {
@@ -163,6 +164,30 @@ void oled_init()
 	oled.setFontMode(1);
 }
 
+void ad527x_init()
+{
+	// read the current RDAC value
+	int ret = digital_pot.read_rdac();
+	Serial.print("Read RDAC Value: ");
+	Serial.println(ret, DEC);
+
+	// set new value to RDAC (0~1024)
+	uint16_t data = 102;
+	ret = digital_pot.write_data(AD5272_RDAC_WRITE, data);
+	if (ret != 0) // check if data is sent successfully
+		Serial.println("Error!");
+
+	// // copy RDAC value to 50TP memory
+	// ret = digital_pot.write_data(AD5272_50TP_WRITE, 0);
+	// if (ret != 0) // check if data is sent successfully
+	// 	Serial.println("Error!");
+
+	// read the new RDAC value
+	ret = digital_pot.read_rdac();
+	Serial.print("New RDAC Value: ");
+	Serial.println(ret, DEC);
+}
+
 uint64_t ChipMAC;
 char ChipMAC_S[19] = {0};
 char CompileTime[20];
@@ -171,7 +196,6 @@ void hardware_init(void)
 	beep_init();
 	WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // 关闭断电检测
 	Serial.begin(5e5);
-	// Serial.println(getCpuFrequencyMhz());
 	ChipMAC = ESP.getEfuseMac();
 	sprintf(CompileTime, "%s %s", __DATE__, __TIME__);
 	for (uint8_t i = 0; i < 6; i++)
@@ -182,11 +206,19 @@ void hardware_init(void)
 	{
 		pd_status = true;
 	}
-	delay(1000);
+	// FilesSystemInit(); // 启动文件系统，并读取存档 **bug***
+
 	Serial.printf("\r\n\r\nDetector DAS based on EVAL-AD7606CFMCZ !\r\n");
 
 	oled_init();
 	ShowBootMsg();
+
+	if (digital_pot.init() != 0)
+	{
+		Serial.println("Cannot send data to the IC.");
+	}
+	ad527x_init();
+
 	rotary_init(); // 初始化编码器
 
 	adc_init();
@@ -213,59 +245,6 @@ void get_sin(void)
 	}
 }
 
-void disp_format_data(uint32_t *raw, uint32_t *buf)
-{
-	uint8_t index = 1;
-	uint16_t min, max, range;
-	uint16_t num = raw[0];
-	min = num;
-	max = num;
-	do
-	{
-		num = raw[index];
-		if (num < min)
-			min = num;
-		if (num > max)
-			max = num;
-	} while (++index < 128);
-	index = 0;
-	range = max - min;
-	if (range > 0)
-		do
-		{
-			num = raw[index];
-			buf[index] = ((num - min) << 6) / range;
-		} while (++index < 128);
-}
-
-uint32_t disp_buf[128];
-
-void draw_curve(uint32_t val)
-{
-	uint32_t buffer_formated[128];
-	disp_buf[127] = val;
-	for (uint8_t i = 1; i < 128; i++)
-	{
-		disp_buf[i - 1] = disp_buf[i];
-	}
-	oled.clearBuffer();
-	disp_format_data(disp_buf, buffer_formated);
-	for (uint8_t i = 0; i < 127; i++)
-	{
-		oled.drawLine(i, 64 - buffer_formated[i], i + 1, 64 - buffer_formated[i + 1]);
-	}
-	oled.setFont(u8g2_font_wqy14_t_gb2312);
-
-	char str[50];
-
-	kf_disp.predict();									// 预测步骤
-	kf_disp.update(BC2V(adc_r_d_avg[ADC_CH3], PN20V0)); // 更新步骤
-	sprintf(str, "CH[3]Volt:%2.6fV", kf_disp.get_val());
-	oled.drawUTF8(1, 63, str);
-	oled.drawHLine(1, 63, 127);
-	oled.drawVLine(0, 0, 64);
-	oled.sendBuffer();
-}
 
 void xTask_oled(void *xTask)
 {
@@ -296,6 +275,9 @@ void xTask_dbgx(void *xTask)
 {
 	while (1)
 	{
+		// Serial.print("core[");
+		// Serial.print(xTaskGetAffinity(xTask));
+		// Serial.printf("]xTask_dbg \r\n");
 		adc_disp_val[ADC_CH1] = BC2V(adc_r_d_avg[ADC_CH1], PN20V0) * adc_cali.adc_gain_ch[ADC_CH1] + adc_cali.adc_offset_ch[ADC_CH1];
 		adc_disp_val[ADC_CH2] = BC2V(adc_r_d_avg[ADC_CH2], PN20V0) * adc_cali.adc_gain_ch[ADC_CH2] + adc_cali.adc_offset_ch[ADC_CH2];
 		adc_disp_val[ADC_CH3] = BC2V(adc_r_d_avg[ADC_CH3], PN20V0) * adc_cali.adc_gain_ch[ADC_CH3] + adc_cali.adc_offset_ch[ADC_CH3];
@@ -305,12 +287,8 @@ void xTask_dbgx(void *xTask)
 		adc_disp_val[ADC_CH7] = BC2V(adc_r_d_avg[ADC_CH7], PP5V00) * adc_cali.adc_gain_ch[ADC_CH7] + adc_cali.adc_offset_ch[ADC_CH7];
 		adc_disp_val[ADC_CH8] = BC2V(adc_r_d_avg[ADC_CH8], PN5V00) * adc_cali.adc_gain_ch[ADC_CH8] + adc_cali.adc_offset_ch[ADC_CH8];
 
-		// Serial.print("core[");
-		// Serial.print(xTaskGetAffinity(xTask));
-		// Serial.printf("]xTask_dbg \r\n");
-		Serial.printf("[%6d %6d %6d %6d][%6d %6d %6d %.6f]\r\n", adc_raw_data[0], adc_raw_data[1], adc_raw_data[2], adc_raw_data[3], adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], BC2V(adc_r_d_avg[ADC_CH8], PN5V00));
+		// Serial.printf("[%6d %6d %6d %6d][%6d %6d %6d %.6f]\r\n", adc_raw_data[0], adc_raw_data[1], adc_raw_data[2], adc_raw_data[3], adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], BC2V(adc_r_d_avg[ADC_CH8], PN5V00));
 		vTaskDelay(100);
-		// Serial.printf("%2.6f, %2.6f, %2.6f, %2.6f, %d, %d, %d, %d \r\n", BC2V(adc_raw_data[0], PN10V0), BC2V(adc_raw_data[1], PN10V0), BC2V(adc_raw_data[2], PN10V0), BC2V(adc_raw_data[3], PN10V0), adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], adc_raw_data[7]);
 	}
 }
 
@@ -398,13 +376,15 @@ void xTask_rotK(void *xTask)
 	while (1)
 	{
 		sys_KeyProcess();
-		TimerEventLoop();
+		// TimerEventLoop();
 		rotary = sys_Counter_Get();
-
+#ifdef ROTARY_DEBUG
 		if (rotary != rotary_hist)
 		{
 			Serial.printf("rotary:%lf\n", rotary);
 		}
+#endif // ROTARY_DEBUG
+
 		rotary_hist = rotary;
 		// 刷新UI
 		System_UI();

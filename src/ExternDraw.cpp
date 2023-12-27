@@ -1,5 +1,5 @@
 #include "externdraw.h"
-
+uint8_t DisplayFlashTick = 0;
 uint8_t POWER = 0;
 // 温度限制
 #define TipMaxTemp 250
@@ -357,28 +357,29 @@ void DrawHighLightText(int x, int y, char *s)
 
 void Log(MESSAGETYPE type, char *s)
 {
+#ifdef DEBUG_EXT_DRAW
     switch (type)
     {
     case LOG_INFO:
-        Serial1.printf("[INFO]");
+        Serial.printf("[INFO]");
         break;
     case LOG_OK:
-        Serial1.printf("[OK]");
+        Serial.printf("[OK]");
         break;
     case LOG_FAILED:
-        Serial1.printf("[FAILED]");
+        Serial.printf("[FAILED]");
         break;
     case LOG_WARNING:
-        Serial1.printf("[WARNING]");
+        Serial.printf("[WARNING]");
         break;
     case LOG_ERROR:
-        Serial1.printf("[ERROR]");
+        Serial.printf("[ERROR]");
         break;
     }
-    Serial1.printf("%s\n", s);
+    Serial.printf("%s\n", s);
+#endif
     // Pop_Windows(s);
 }
-
 
 /***
  * @description: 短文本编辑器
