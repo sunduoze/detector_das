@@ -17,10 +17,9 @@ enum MESSAGETYPE
     LOG_ERROR,
 };
 
-void EnterLogo(void);
-void ShowBootMsg(void);
+void enter_logo(void);
+void disp_boot_info(void);
 
-extern uint8_t DisplayFlashTick;
 void Display(void);
 
 void Draw_Utf(int x, int y, char *s);
@@ -43,4 +42,5 @@ void TextEditor(char *title, char *text);
 uint32_t Get_UTF8_Ascii_Pix_Len(uint8_t size, char *s);
 
 void Log(MESSAGETYPE type, char *s);
+
 #endif

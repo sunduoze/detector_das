@@ -77,13 +77,11 @@ extern char ChipMAC_S[19];
 extern char CompileTime[20];
 
 extern void hardware_init(void);
-extern void ble_phyphox_init();
-extern void wifi_client_init();
+
 extern void xTask_wifi(void *xTask);
 extern void xTask_oled(void *xTask);
 extern void xTask_dbgx(void *xTask);
 extern void xTask_adcx(void *xTask);
-extern void xTask_rotK(void *xTask);
 extern void xTask_blex(void *xTask);
 
 extern void get_sin(void);

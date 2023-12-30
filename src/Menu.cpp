@@ -1,6 +1,11 @@
 #include "task.h"
 #include "event.h"
 
+#define MAX_ADC_CH 8
+#define SCREEN_ROW 64
+
+#define CNSize 12
+
 // 菜单系统状态 0:自动退出 1:运行菜单系统
 uint8_t Menu_System_State = false;
 // 跳转即退出菜单，该标志位适用于快速打开菜单设置，当遇到跳转操作时将保存设置并退出菜单
@@ -46,8 +51,6 @@ enum SYSLANG
 };
 uint8_t SmoothAnimation_Flag = true;
 uint8_t OptionStripFixedLength_Flag = false;
-uint8_t PIDMode = true;
-uint8_t Use_KFP = true;
 uint8_t PanelSettings = PANELSET_Detailed;
 uint8_t ScreenFlip = false;
 uint8_t Volume = true;
@@ -56,64 +59,20 @@ uint8_t HandleTrigger = HANDLETRIGGER_VibrationSwitch;
 uint8_t Language = LANG_Chinese;
 uint8_t MenuListMode = false;
 
-uint8_t ble_status = true;
+uint8_t ble_status = false;
 uint8_t wifi_status = false;
 uint8_t pd_status = false;
 
 uint8_t disp_channel = ADC_CH3;
-uint8_t disp_method = 1;
-
-uint8_t TipTotal = 1;
+uint8_t disp_method = 0;
 
 float ScreenBrightness = 128;
-float BootTemp = 60;  // 开机温度          (°C)
-float SleepTemp = 60; // 休眠温度          (°C)
-float BoostTemp = 50; // 爆发模式升温幅度   (°C)
-
-float ShutdownTime = 0;         // 关机提醒              (分)
-float SleepTime = 10;           // 休眠触发时间          (分)
-float ScreenProtectorTime = 60; // 屏保在休眠后的触发时间(秒)
-// float BoostTime = 60;           // 爆发模式持续时间      (秒)
 float UndervoltageAlert = 3;
-
-float aggKp = 50.0, aggKi = 0.0, aggKd = 0.5;
-float consKp = 30.0, consKi = 1.0, consKd = 0.5;
-
-float psu_set_cv_volt = 17.8f;
+float psu_set_cv_volt = 18.0f;
 float psu_set_cc_curr = 0.5f;
-// 卡尔曼滤波
-typedef struct
-{
-    float LastP; // 上次估算协方差 初始化值为0.02
-    float Now_P; // 当前估算协方差 初始化值为0
-    float out;   // 卡尔曼滤波器输出 初始化值为0
-    float Kg;    // 卡尔曼增益 初始化值为0
-    float Q;     // 过程噪声协方差 初始化值为0.001
-    float R;     // 观测噪声协方差 初始化值为0.543
-} KFP;           // Kalman Filter parameter
 
-KFP KFP_Temp = {0.02, 0, 0, 0, 0.01, 0.1};
-float ADC_PID_Cycle_List[3] = {880, 440, 220};
-enum TEMP_CTRL_STATUS_CODE
-{
-    TEMP_STATUS_ERROR = 0,
-    TEMP_STATUS_OFF,
-    TEMP_STATUS_SLEEP,
-    TEMP_STATUS_BOOST,
-    TEMP_STATUS_WORKY,
-    TEMP_STATUS_HEAT,
-    TEMP_STATUS_HOLD,
-};
-// bool Counter_LOCK_Flag = false;
-uint8_t TempCTRL_Status = TEMP_STATUS_OFF;
-// char *TipName = (char *)"A";
 char *title_name = (char *)"Detector DAS";
-double TipTemperature = 222.33;
-#define MAX_ADC_CH 8
-#define SCREEN_ROW 64
-
-#define CNSize 12
-void FlashTipMenu(void);
+char BLE_name[20] = "BLE-DAS";
 
 // 由于sizeof的原理是在编译阶段由编译器替换数组大小，因此我们无法计算指针的sizeof！需要在位图的第一个字节填写 n 阶矩阵图像
 /*
@@ -130,9 +89,6 @@ enum Switch_space_Obj
 {
     SwitchSpace_SmoothAnimation = 0,
     SwitchSpace_OptionStripFixedLength,
-
-    SwitchSpace_PIDMode,
-    SwitchSpace_KFP,
     SwitchSpace_PanelSettings,
     SwitchSpace_ScreenFlip,
     SwitchSpace_Volume,
@@ -141,17 +97,14 @@ enum Switch_space_Obj
     SwitchSpace_Language,
     SwitchSpace_disp_channel,
     SwitchSpace_disp_method,
-
     SwitchSpace_BLE_status,
+    SwitchSpace_WIFI_status,
     SwitchSpace_MenuListMode,
 };
 
 uint8_t *Switch_space[] = {
     &SmoothAnimation_Flag,
     &OptionStripFixedLength_Flag,
-
-    &PIDMode,
-    &Use_KFP,
     &PanelSettings,
     &ScreenFlip,
     &Volume,
@@ -160,8 +113,8 @@ uint8_t *Switch_space[] = {
     &Language,
     &disp_channel,
     &disp_method,
-
     &ble_status,
+    &wifi_status,
     &MenuListMode,
 };
 
@@ -183,31 +136,9 @@ enum Slide_space_Obj
 {
     Slide_space_ScreenBrightness = 0,
     Slide_space_Scroll,
-
-    Slide_space_BootTemp,
-    Slide_space_SleepTemp,
-    Slide_space_BoostTemp,
-
-    Slide_space_ShutdownTime,
-    Slide_space_SleepTime,
-    Slide_space_BoostTime,
-    Slide_space_ScreenProtectorTime,
-
     Slide_space_UndervoltageAlert,
-
-    Slide_space_PID_AP,
-    Slide_space_PID_AI,
-    Slide_space_PID_AD,
-    Slide_space_PID_CP,
-    Slide_space_PID_CI,
-    Slide_space_PID_CD,
-
-    Slide_space_KFP_Q,
-    Slide_space_KFP_R,
-
     Slide_space_psu_set_cv_volt,
     Slide_space_psu_set_cc_curr,
-
     Slide_space_ADC_CH1_Gain,
     Slide_space_ADC_CH1_Offset,
     Slide_space_ADC_CH2_Gain,
@@ -224,39 +155,13 @@ enum Slide_space_Obj
     Slide_space_ADC_CH7_Offset,
     Slide_space_ADC_CH8_Gain,
     Slide_space_ADC_CH8_Offset,
-
-    Slide_space_ADC_PID_Cycle_List_0,
-    Slide_space_ADC_PID_Cycle_List_1,
-    Slide_space_ADC_PID_Cycle_List_2,
 };
 struct Slide_Bar Slide_space[] = {
     {(float *)&ScreenBrightness, 0, 255, 16},      // 亮度调整
     {(float *)&MenuScroll, 0, SCREEN_ROW / 16, 1}, // 自适应菜单滚动范围
-
-    {(float *)&BootTemp, 150, 400, 5},
-    {(float *)&SleepTemp, 150, 400, 5},
-    {(float *)&BoostTemp, 0, 150, 1},
-
-    {(float *)&ShutdownTime, 0, 60, 1},
-    {(float *)&SleepTime, 0, 60, 1},
-    {(float *)&BoostTime, 0, 600, 1},
-    {(float *)&ScreenProtectorTime, 0, 600, 1},
-
     {(float *)&UndervoltageAlert, 0, 36, 0.25},
-
-    {(float *)&aggKp, 0, 50, 0.1},
-    {(float *)&aggKi, 0, 50, 0.1},
-    {(float *)&aggKd, 0, 50, 0.1},
-    {(float *)&consKp, 0, 50, 0.1},
-    {(float *)&consKi, 0, 50, 0.1},
-    {(float *)&consKd, 0, 50, 0.1},
-
-    {(float *)&KFP_Temp.Q, 0, 5, 0.01},
-    {(float *)&KFP_Temp.R, 0, 25, 0.1},
-
     {(float *)&psu_set_cv_volt, 17.8, 19.7, 0.02},
     {(float *)&psu_set_cc_curr, 0.0, 0.5, 0.01},
-
     {(float *)&adc_cali.adc_gain_ch[ADC_CH1], 0.9, 1.1, 0.00002},
     {(float *)&adc_cali.adc_offset_ch[ADC_CH1], -0.1, 0.1, 0.00002},
     {(float *)&adc_cali.adc_gain_ch[ADC_CH2], 0.9, 1.1, 0.00002},
@@ -273,10 +178,6 @@ struct Slide_Bar Slide_space[] = {
     {(float *)&adc_cali.adc_offset_ch[ADC_CH7], -0.1, 0.1, 0.00002},
     {(float *)&adc_cali.adc_gain_ch[ADC_CH8], -2.1, -1.9, 0.00002},
     {(float *)&adc_cali.adc_offset_ch[ADC_CH8], -0.1, 0.1, 0.00002},
-
-    {(float *)&ADC_PID_Cycle_List[0], 25, 2000, 25},
-    {(float *)&ADC_PID_Cycle_List[1], 25, 2000, 25},
-    {(float *)&ADC_PID_Cycle_List[2], 25, 2000, 25},
 };
 
 /*
@@ -323,24 +224,16 @@ struct Menu_Level_System MenuLevel[] = {
     {3, 0, 0, 8, Menu_NULL_IMG},
     {4, 0, 0, 2, Menu_HAVE_IMG},
     {5, 0, 0, 6, Menu_HAVE_IMG},
-    {6, 0, 0, 5, Menu_HAVE_IMG},
-    {7, 0, 0, 7, Menu_HAVE_IMG},
+    {6, 0, 0, 4, Menu_HAVE_IMG},
+    {7, 0, 0, 6, Menu_HAVE_IMG},
     {8, 0, 0, 2, Menu_HAVE_IMG},
-    {9, 0, 0, 9, Menu_NULL_IMG},
+    {9, 0, 0, 2, Menu_HAVE_IMG},
     {10, 0, 0, 2, Menu_HAVE_IMG},
-    {11, 0, 0, 2, Menu_HAVE_IMG},
-    {12, 0, 0, 2, Menu_HAVE_IMG},
-    {13, 0, 0, 1, Menu_HAVE_IMG},
-    {14, 0, 0, 2, Menu_HAVE_IMG},
-    {15, 0, 0, 17, Menu_NULL_IMG},
-    {16, 0, 0, 3, Menu_NULL_IMG},
-    {17, 0, 0, 4, Menu_NULL_IMG},
-    {18, 0, 0, 4, Menu_NULL_IMG},
-    {19, 0, 0, 3, Menu_NULL_IMG},
-    {20, 0, 0, 4, Menu_NULL_IMG},
-    {21, 0, 0, 4, Menu_NULL_IMG},
-    {22, 0, 0, 3, Menu_NULL_IMG},
-    {23, 0, 0, 3, Menu_NULL_IMG},
+    {11, 0, 0, 1, Menu_HAVE_IMG},
+    {12, 0, 0, 17, Menu_NULL_IMG},
+    {13, 0, 0, 3, Menu_NULL_IMG},
+    {14, 0, 0, 3, Menu_NULL_IMG},
+    {15, 0, 0, 3, Menu_NULL_IMG},
 };
 
 /*
@@ -367,9 +260,7 @@ struct Menu_Level_System MenuLevel[] = {
 #define Progress_Bar_Menu_Op 4
 #define SingleBox_Menu_Op 5
 #define Menu_NULL_OP 6
-void LoadTipConfig(void)
-{
-}
+
 void switch_disp_adc_ch()
 {
     Serial.printf("ADC:%d\r\n", disp_channel + 1);
@@ -379,14 +270,11 @@ void psu_set()
     // Serial.printf("psu_set_cv_volt:%f\r\n", psu_set_cv_volt);
     digital_pot.set_res_val((uint32_t)map_f(psu_set_cv_volt, 17.8, 19.8, 0, 2e4));
 }
-void SaveTipConfig(void)
-{
-}
 
 void save_calibration_para(void)
 {
 }
-char BLE_name[20] = "BLE-DAS";
+
 // uint8_t BLE_State = true;
 void BLE_Restart(void)
 {
@@ -412,14 +300,13 @@ struct Menu_System Menu[] = {
 
     {1, 0, Title_Menu_Op, "[显示设置]", Menu_NULL_IMG, 0, 1, Menu_NULL_F},
     {1, 1, Jump_Menu_Op, "主界面显示", IMG_Main, 2, 0, Menu_NULL_F},
-    {1, 2, Jump_Menu_Op, "系统校准", IMG_Calibration, 15, 0, Menu_NULL_F},
-    {1, 3, Jump_Menu_Op, "可调电源设置", IMG_Adj_PSU, 19, 0, Menu_NULL_F},
+    {1, 2, Jump_Menu_Op, "系统校准", IMG_Calibration, 12, 0, Menu_NULL_F},
+    {1, 3, Jump_Menu_Op, "可调电源设置", IMG_Adj_PSU, 13, 0, Menu_NULL_F},
     {1, 4, Jump_Menu_Op, "返回", Set7, 0, 1, Menu_NULL_F},
 
     {2, 0, Title_Menu_Op, "[主界面显示]", Menu_NULL_IMG, 1, 1, Menu_NULL_F},
-    {2, 1, Jump_Menu_Op, "切换显示ADC通道", IMG_SW_ADC_CH, 3, 0, Menu_NULL_F}, //*FlashTipMenu},
-    {2, 2, Jump_Menu_Op, "显示方式", Set8, 4, 0, Menu_NULL_F},                 //*FlashTipMenu},
-    // {2, 3, F_Menu_Op, "校准温度", Set9, 0, 0, *CalibrationTemperature},
+    {2, 1, Jump_Menu_Op, "切换显示ADC通道", IMG_SW_ADC_CH, 3, 0, Menu_NULL_F},
+    {2, 2, Jump_Menu_Op, "显示方式", Set8, 4, 0, Menu_NULL_F},
     {2, 3, Jump_Menu_Op, "返回", Set7, 1, 1, Menu_NULL_F},
 
     {3, 0, Title_Menu_Op, "[切换显示ADC通道]", Menu_NULL_IMG, 2, 1, *switch_disp_adc_ch},
@@ -438,145 +325,76 @@ struct Menu_System Menu[] = {
 
     {5, 0, Title_Menu_Op, "系统配置", Menu_NULL_IMG, 0, 2, Menu_NULL_F},
     {5, 1, Jump_Menu_Op, "个性化", IMG_Pen, 6, 0, Menu_NULL_F},
-    {5, 2, Jump_Menu_Op, "蓝牙", IMG_BLE, 22, 0, Menu_NULL_F},
+    {5, 2, Jump_Menu_Op, "蓝牙", IMG_BLE, 14, 0, Menu_NULL_F},
     {5, 3, Progress_Bar_Menu_Op, "欠压提醒", Set6, Slide_space_UndervoltageAlert, 0, Menu_NULL_F},
-    {5, 4, Jump_Menu_Op, "Wi-Fi", IMG_WIFI, 23, 0, Menu_NULL_F},
-    {5, 5, Jump_Menu_Op, "语言设置", Set_LANG, 13, 0, Menu_NULL_F},
+    {5, 4, Jump_Menu_Op, "Wi-Fi", IMG_WIFI, 15, 0, Menu_NULL_F},
+    {5, 5, Jump_Menu_Op, "语言设置", Set_LANG, 11, 0, Menu_NULL_F},
     {5, 6, Jump_Menu_Op, "返回", Set7, 0, 2, Menu_NULL_F},
 
     {6, 0, Title_Menu_Op, "个性化", Menu_NULL_IMG, 5, 1, Menu_NULL_F},
     {6, 1, Jump_Menu_Op, "显示效果", Set4, 7, 0, Menu_NULL_F},
-    {6, 2, Jump_Menu_Op, "声音设置", Set5, 10, 0, Menu_NULL_F},
+    {6, 2, Jump_Menu_Op, "声音设置", Set5, 9, 0, Menu_NULL_F},
     {6, 3, Switch_Menu_Op, "编码器方向", Set19, SwitchSpace_RotaryDirection, 0, *PopMsg_RotaryDirection},
-    {6, 4, Jump_Menu_Op, "手柄触发", IMG_Trigger, 14, 0, Menu_NULL_F},
-    {6, 5, Jump_Menu_Op, "返回", Set7, 5, 1, Menu_NULL_F},
+    {6, 4, Jump_Menu_Op, "返回", Set7, 5, 1, Menu_NULL_F},
 
     {7, 0, Title_Menu_Op, "显示效果", Menu_NULL_IMG, 6, 1, Menu_NULL_F},
     {7, 1, Jump_Menu_Op, "面板设置", Set0, 8, 0, Menu_NULL_F},
     {7, 2, Switch_Menu_Op, "翻转屏幕", IMG_Flip, SwitchSpace_ScreenFlip, 0, *Update_OLED_Flip},
-    {7, 3, Jump_Menu_Op, "过渡动画", IMG_Animation, 11, 0, Menu_NULL_F},
+    {7, 3, Jump_Menu_Op, "过渡动画", IMG_Animation, 10, 0, Menu_NULL_F},
     {7, 4, Progress_Bar_Menu_Op, "屏幕亮度", IMG_Sun, Slide_space_ScreenBrightness, 1, *Update_OLED_Light_Level},
-    {7, 5, Jump_Menu_Op, "选项条定宽", IMG_Size, 9, 0, Menu_NULL_F},
-    {7, 6, Switch_Menu_Op, "列表模式", IMG_ListMode, SwitchSpace_MenuListMode, 0, *PopMsg_ListMode},
-    {7, 7, Jump_Menu_Op, "返回", Set7, 6, 1, Menu_NULL_F},
+    {7, 5, Switch_Menu_Op, "列表模式", IMG_ListMode, SwitchSpace_MenuListMode, 0, *PopMsg_ListMode},
+    {7, 6, Jump_Menu_Op, "返回", Set7, 6, 1, Menu_NULL_F},
 
     {8, 0, Title_Menu_Op, "面板设置", Menu_NULL_IMG, 7, 1, Menu_NULL_F},
     {8, 1, SingleBox_Menu_Op, "简约", Set17, SwitchSpace_PanelSettings, 0, *JumpWithTitle},
     {8, 2, SingleBox_Menu_Op, "详细", Set18, SwitchSpace_PanelSettings, 1, *JumpWithTitle},
 
-    {9, 0, Title_Menu_Op, "选项条定宽设置&测试", Menu_NULL_IMG, 7, 5, Menu_NULL_F},
-    {9, 1, SingleBox_Menu_Op, "固定", Menu_NULL_IMG, SwitchSpace_OptionStripFixedLength, true, Menu_NULL_F},
-    {9, 2, SingleBox_Menu_Op, "自适应", Menu_NULL_IMG, SwitchSpace_OptionStripFixedLength, false, Menu_NULL_F},
-    {9, 3, Jump_Menu_Op, "--- 往下翻 ---", Menu_NULL_IMG, 9, 4, Menu_NULL_F},
-    {9, 4, Menu_NULL_OP, "人民!", Menu_NULL_IMG, 0, 0, Menu_NULL_F},
-    {9, 5, Menu_NULL_OP, "只有人民~", Menu_NULL_IMG, 0, 0, Menu_NULL_F},
-    {9, 6, Menu_NULL_OP, "才是创造世界历史的", Menu_NULL_IMG, 0, 1, Menu_NULL_F},
-    {9, 7, Menu_NULL_OP, "动 力！", Menu_NULL_IMG, 0, 0, Menu_NULL_F},
-    {9, 8, Jump_Menu_Op, "--- 往上翻 ---", Menu_NULL_IMG, 9, 0, Menu_NULL_F},
-    {9, 9, Jump_Menu_Op, "返回", Menu_NULL_IMG, 7, 5, Menu_NULL_F},
+    {9, 0, Title_Menu_Op, "声音设置", Menu_NULL_IMG, 6, 2, Menu_NULL_F},
+    {9, 1, SingleBox_Menu_Op, "开启", Set5, SwitchSpace_Volume, true, *JumpWithTitle},
+    {9, 2, SingleBox_Menu_Op, "关闭", Set5_1, SwitchSpace_Volume, false, *JumpWithTitle},
 
-    {10, 0, Title_Menu_Op, "声音设置", Menu_NULL_IMG, 6, 2, Menu_NULL_F},
-    {10, 1, SingleBox_Menu_Op, "开启", Set5, SwitchSpace_Volume, true, *JumpWithTitle},
-    {10, 2, SingleBox_Menu_Op, "关闭", Set5_1, SwitchSpace_Volume, false, *JumpWithTitle},
+    {10, 0, Title_Menu_Op, "动画设置", Menu_NULL_IMG, 7, 3, Menu_NULL_F},
+    {10, 1, SingleBox_Menu_Op, "开启", IMG_Animation, SwitchSpace_SmoothAnimation, true, *JumpWithTitle},
+    {10, 2, SingleBox_Menu_Op, "关闭", IMG_Animation_DISABLE, SwitchSpace_SmoothAnimation, false, *JumpWithTitle},
 
-    {11, 0, Title_Menu_Op, "动画设置", Menu_NULL_IMG, 7, 3, Menu_NULL_F},
-    {11, 1, SingleBox_Menu_Op, "开启", IMG_Animation, SwitchSpace_SmoothAnimation, true, *JumpWithTitle},
-    {11, 2, SingleBox_Menu_Op, "关闭", IMG_Animation_DISABLE, SwitchSpace_SmoothAnimation, false, *JumpWithTitle},
+    {11, 0, Title_Menu_Op, "语言设置", Menu_NULL_IMG, 5, 5, Menu_NULL_F},
+    {11, 1, SingleBox_Menu_Op, "简体中文", Lang_CN, SwitchSpace_Language, LANG_Chinese, *JumpWithTitle},
 
-    {12, 0, Title_Menu_Op, "温控模式", Menu_NULL_IMG, 19, 2, Menu_NULL_F},
-    {12, 1, SingleBox_Menu_Op, "PID控制", Set16, SwitchSpace_PIDMode, true, *JumpWithTitle},
-    {12, 2, SingleBox_Menu_Op, "模糊控制", Set15, SwitchSpace_PIDMode, false, *JumpWithTitle},
+    {12, 0, Title_Menu_Op, "[系统校准]", Menu_NULL_IMG, 1, 2, *save_calibration_para},
+    {12, 1, Progress_Bar_Menu_Op, "通道1-G", Menu_NULL_IMG, Slide_space_ADC_CH1_Gain, 0, Menu_NULL_F},
+    {12, 2, Progress_Bar_Menu_Op, "通道1-O", Menu_NULL_IMG, Slide_space_ADC_CH1_Offset, 0, Menu_NULL_F},
+    {12, 3, Progress_Bar_Menu_Op, "通道2-G", Menu_NULL_IMG, Slide_space_ADC_CH2_Gain, 0, Menu_NULL_F},
+    {12, 4, Progress_Bar_Menu_Op, "通道2-O", Menu_NULL_IMG, Slide_space_ADC_CH2_Offset, 0, Menu_NULL_F},
+    {12, 5, Progress_Bar_Menu_Op, "通道3-G", Menu_NULL_IMG, Slide_space_ADC_CH3_Gain, 0, Menu_NULL_F},
+    {12, 6, Progress_Bar_Menu_Op, "通道3-O", Menu_NULL_IMG, Slide_space_ADC_CH3_Offset, 0, Menu_NULL_F},
+    {12, 7, Progress_Bar_Menu_Op, "通道4-G", Menu_NULL_IMG, Slide_space_ADC_CH4_Gain, 0, Menu_NULL_F},
+    {12, 8, Progress_Bar_Menu_Op, "通道4-O", Menu_NULL_IMG, Slide_space_ADC_CH4_Offset, 0, Menu_NULL_F},
+    {12, 9, Progress_Bar_Menu_Op, "通道5-G", Menu_NULL_IMG, Slide_space_ADC_CH5_Gain, 0, Menu_NULL_F},
+    {12, 10, Progress_Bar_Menu_Op, "通道5-O", Menu_NULL_IMG, Slide_space_ADC_CH5_Offset, 0, Menu_NULL_F},
+    {12, 11, Progress_Bar_Menu_Op, "通道6-G", Menu_NULL_IMG, Slide_space_ADC_CH6_Gain, 0, Menu_NULL_F},
+    {12, 12, Progress_Bar_Menu_Op, "通道6-O", Menu_NULL_IMG, Slide_space_ADC_CH6_Offset, 0, Menu_NULL_F},
+    {12, 13, Progress_Bar_Menu_Op, "通道7-G", Menu_NULL_IMG, Slide_space_ADC_CH7_Gain, 0, Menu_NULL_F},
+    {12, 14, Progress_Bar_Menu_Op, "通道7-O", Menu_NULL_IMG, Slide_space_ADC_CH7_Offset, 0, Menu_NULL_F},
+    {12, 15, Progress_Bar_Menu_Op, "通道8-G", Menu_NULL_IMG, Slide_space_ADC_CH8_Gain, 0, Menu_NULL_F},
+    {12, 16, Progress_Bar_Menu_Op, "通道8-O", Menu_NULL_IMG, Slide_space_ADC_CH8_Offset, 0, Menu_NULL_F},
+    {12, 17, Jump_Menu_Op, "返回", Menu_NULL_IMG, 1, 2, *save_calibration_para},
 
-    {13, 0, Title_Menu_Op, "语言设置", Menu_NULL_IMG, 5, 5, Menu_NULL_F},
-    {13, 1, SingleBox_Menu_Op, "简体中文", Lang_CN, SwitchSpace_Language, LANG_Chinese, *JumpWithTitle},
+    {13, 0, Title_Menu_Op, "[可调电源设置]", Menu_NULL_IMG, 1, 3, *psu_set},
+    {13, 1, Progress_Bar_Menu_Op, "恒压电压", Menu_NULL_IMG, Slide_space_psu_set_cv_volt, 0, Menu_NULL_F},
+    {13, 2, Progress_Bar_Menu_Op, "恒流电流", Menu_NULL_IMG, Slide_space_psu_set_cc_curr, 0, Menu_NULL_F},
+    {13, 3, Jump_Menu_Op, "返回", Menu_NULL_IMG, 1, 3, *psu_set},
 
-    {14, 0, Title_Menu_Op, "手柄触发", Menu_NULL_IMG, 6, 4, Menu_NULL_F},
-    {14, 1, SingleBox_Menu_Op, "震动开关", IMG_VibrationSwitch, SwitchSpace_HandleTrigger, 0, *JumpWithTitle},
-    {14, 2, SingleBox_Menu_Op, "干簧管", IMG_ReedSwitch, SwitchSpace_HandleTrigger, 1, *JumpWithTitle},
+    {14, 0, Title_Menu_Op, "蓝牙", Menu_NULL_IMG, 5, 2, Menu_NULL_F},
+    {14, 1, Switch_Menu_Op, "状态", Menu_NULL_IMG, SwitchSpace_BLE_status, 0, *BLE_Restart},
+    {14, 2, F_Menu_Op, "设备名称", Menu_NULL_IMG, 22, 2, *BLE_Rename},
+    {14, 3, Jump_Menu_Op, "返回", Menu_NULL_IMG, 5, 2, Menu_NULL_F},
 
-    {15, 0, Title_Menu_Op, "[系统校准]", Menu_NULL_IMG, 1, 2, *save_calibration_para},
-    {15, 1, Progress_Bar_Menu_Op, "通道1-G", Menu_NULL_IMG, Slide_space_ADC_CH1_Gain, 0, Menu_NULL_F},
-    {15, 2, Progress_Bar_Menu_Op, "通道1-O", Menu_NULL_IMG, Slide_space_ADC_CH1_Offset, 0, Menu_NULL_F},
-    {15, 3, Progress_Bar_Menu_Op, "通道2-G", Menu_NULL_IMG, Slide_space_ADC_CH2_Gain, 0, Menu_NULL_F},
-    {15, 4, Progress_Bar_Menu_Op, "通道2-O", Menu_NULL_IMG, Slide_space_ADC_CH2_Offset, 0, Menu_NULL_F},
-    {15, 5, Progress_Bar_Menu_Op, "通道3-G", Menu_NULL_IMG, Slide_space_ADC_CH3_Gain, 0, Menu_NULL_F},
-    {15, 6, Progress_Bar_Menu_Op, "通道3-O", Menu_NULL_IMG, Slide_space_ADC_CH3_Offset, 0, Menu_NULL_F},
-    {15, 7, Progress_Bar_Menu_Op, "通道4-G", Menu_NULL_IMG, Slide_space_ADC_CH4_Gain, 0, Menu_NULL_F},
-    {15, 8, Progress_Bar_Menu_Op, "通道4-O", Menu_NULL_IMG, Slide_space_ADC_CH4_Offset, 0, Menu_NULL_F},
-    {15, 9, Progress_Bar_Menu_Op, "通道5-G", Menu_NULL_IMG, Slide_space_ADC_CH5_Gain, 0, Menu_NULL_F},
-    {15, 10, Progress_Bar_Menu_Op, "通道5-O", Menu_NULL_IMG, Slide_space_ADC_CH5_Offset, 0, Menu_NULL_F},
-    {15, 11, Progress_Bar_Menu_Op, "通道6-G", Menu_NULL_IMG, Slide_space_ADC_CH6_Gain, 0, Menu_NULL_F},
-    {15, 12, Progress_Bar_Menu_Op, "通道6-O", Menu_NULL_IMG, Slide_space_ADC_CH6_Offset, 0, Menu_NULL_F},
-    {15, 13, Progress_Bar_Menu_Op, "通道7-G", Menu_NULL_IMG, Slide_space_ADC_CH7_Gain, 0, Menu_NULL_F},
-    {15, 14, Progress_Bar_Menu_Op, "通道7-O", Menu_NULL_IMG, Slide_space_ADC_CH7_Offset, 0, Menu_NULL_F},
-    {15, 15, Progress_Bar_Menu_Op, "通道8-G", Menu_NULL_IMG, Slide_space_ADC_CH8_Gain, 0, Menu_NULL_F},
-    {15, 16, Progress_Bar_Menu_Op, "通道8-O", Menu_NULL_IMG, Slide_space_ADC_CH8_Offset, 0, Menu_NULL_F},
-    {15, 17, Jump_Menu_Op, "返回", Menu_NULL_IMG, 1, 2, *save_calibration_para},
-
-    {16, 0, Title_Menu_Op, "PID参数", Menu_NULL_IMG, 2, 3, Menu_NULL_F},
-    {16, 1, Jump_Menu_Op, "PID爬升期参数", Menu_NULL_IMG, 17, 0, Menu_NULL_F},
-    {16, 2, Jump_Menu_Op, "PID接近期参数", Menu_NULL_IMG, 18, 0, Menu_NULL_F},
-    {16, 3, Jump_Menu_Op, "返回", Menu_NULL_IMG, 2, 3, Menu_NULL_F},
-
-    {17, 0, Title_Menu_Op, "PID爬升期", Menu_NULL_IMG, 16, 1, *SaveTipConfig},
-    {17, 1, Progress_Bar_Menu_Op, "比例P", Menu_NULL_IMG, Slide_space_PID_AP, 0, Menu_NULL_F},
-    {17, 2, Progress_Bar_Menu_Op, "积分I", Menu_NULL_IMG, Slide_space_PID_AI, 0, Menu_NULL_F},
-    {17, 3, Progress_Bar_Menu_Op, "微分D", Menu_NULL_IMG, Slide_space_PID_AD, 0, Menu_NULL_F},
-    {17, 4, Jump_Menu_Op, "返回", Menu_NULL_IMG, 16, 1, *SaveTipConfig},
-
-    {18, 0, Title_Menu_Op, "PID接近期", Menu_NULL_IMG, 16, 2, *SaveTipConfig},
-    {18, 1, Progress_Bar_Menu_Op, "比例P", Menu_NULL_IMG, Slide_space_PID_CP, 0, Menu_NULL_F},
-    {18, 2, Progress_Bar_Menu_Op, "积分I", Menu_NULL_IMG, Slide_space_PID_CI, 0, Menu_NULL_F},
-    {18, 3, Progress_Bar_Menu_Op, "微分D", Menu_NULL_IMG, Slide_space_PID_CD, 0, Menu_NULL_F},
-    {18, 4, Jump_Menu_Op, "返回", Menu_NULL_IMG, 16, 2, *SaveTipConfig},
-
-    {19, 0, Title_Menu_Op, "[可调电源设置]", Menu_NULL_IMG, 1, 3, *psu_set},
-    {19, 1, Progress_Bar_Menu_Op, "恒压电压", Menu_NULL_IMG, Slide_space_psu_set_cv_volt, 0, Menu_NULL_F},
-    {19, 2, Progress_Bar_Menu_Op, "恒流电流", Menu_NULL_IMG, Slide_space_psu_set_cc_curr, 0, Menu_NULL_F},
-    {19, 3, Jump_Menu_Op, "返回", Menu_NULL_IMG, 1, 3, *psu_set},
-
-    {20, 0, Title_Menu_Op, "卡尔曼滤波器", Menu_NULL_IMG, 19, 4, Menu_NULL_F},
-    {20, 1, Switch_Menu_Op, "启用状态", Menu_NULL_IMG, SwitchSpace_KFP, 0, Menu_NULL_F},
-    {20, 2, Progress_Bar_Menu_Op, "过程噪声协方差", Menu_NULL_IMG, Slide_space_KFP_Q, 0, Menu_NULL_F},
-    {20, 3, Progress_Bar_Menu_Op, "观察噪声协方差", Menu_NULL_IMG, Slide_space_KFP_R, 0, Menu_NULL_F},
-    {20, 4, Jump_Menu_Op, "返回", Menu_NULL_IMG, 19, 4, Menu_NULL_F},
-
-    {21, 0, Title_Menu_Op, "采样周期", Menu_NULL_IMG, 19, 3, Menu_NULL_F},
-    {21, 1, Progress_Bar_Menu_Op, "温差>150", Menu_NULL_IMG, Slide_space_ADC_PID_Cycle_List_0, 0, Menu_NULL_F},
-    {21, 2, Progress_Bar_Menu_Op, "温差>50", Menu_NULL_IMG, Slide_space_ADC_PID_Cycle_List_1, 0, Menu_NULL_F},
-    {21, 3, Progress_Bar_Menu_Op, "温差≤50", Menu_NULL_IMG, Slide_space_ADC_PID_Cycle_List_2, 0, Menu_NULL_F},
-    {21, 4, Jump_Menu_Op, "返回", Menu_NULL_IMG, 19, 3, Menu_NULL_F},
-
-    {22, 0, Title_Menu_Op, "蓝牙", Menu_NULL_IMG, 5, 2, Menu_NULL_F},
-    {22, 1, Switch_Menu_Op, "状态", Menu_NULL_IMG, SwitchSpace_BLE_status, 0, *BLE_Restart},
-    {22, 2, F_Menu_Op, "设备名称", Menu_NULL_IMG, 22, 2, *BLE_Rename},
-    {22, 3, Jump_Menu_Op, "返回", Menu_NULL_IMG, 5, 2, Menu_NULL_F},
-
-    {23, 0, Title_Menu_Op, "Wi-Fi", Menu_NULL_IMG, 5, 2, Menu_NULL_F},
-    {23, 1, Switch_Menu_Op, "状态", Menu_NULL_IMG, SwitchSpace_BLE_status, 0, *BLE_Restart},
-    {23, 2, F_Menu_Op, "设备名称", Menu_NULL_IMG, 22, 2, *WIFI_Rename},
-    {23, 3, Jump_Menu_Op, "返回", Menu_NULL_IMG, 5, 2, Menu_NULL_F},
+    {15, 0, Title_Menu_Op, "Wi-Fi", Menu_NULL_IMG, 5, 4, Menu_NULL_F},
+    {15, 1, Switch_Menu_Op, "状态", Menu_NULL_IMG, SwitchSpace_WIFI_status, 0, Menu_NULL_F},
+    {15, 2, F_Menu_Op, "设备名称", Menu_NULL_IMG, 22, 2, *WIFI_Rename},
+    {15, 3, Jump_Menu_Op, "返回", Menu_NULL_IMG, 5, 4, Menu_NULL_F},
 
 };
-
-/***
- * @description: 更新菜单配置列表
- * @param {*}
- * @return {*}
- */
-void FlashTipMenu(void)
-{
-    uint8_t MLID = Get_Real_Menu_Level_Id(15); // 查询配置列表所在的菜单系统层级
-    uint8_t MID;
-    Serial.printf("[debug]MLID:%d\r\n", MLID);
-    // MenuLevel[MLID].max = TipTotal; // 修改菜单最大项目数量
-
-    for (uint8_t i = 0; i < TipTotal; i++)
-    {
-        MID = Get_Menu_Id(MLID, i + (1)); // 查询配置列表项目id,另外 +(1)是为了跳过标题
-        // Menu[MID].name = MyTip[i].name;   // 刷新名称
-    }
-}
 
 // 实现四舍五入函数
 double round_to_decimal(double num, int decimal_places)
@@ -610,18 +428,8 @@ void System_Menu_Init(void)
     // 解除编码器锁定（如果有）
     Counter_LOCK_Flag = false;
 }
-/***
- * @description: 初始化主界面
- * @param {*}
- * @return {*}
- */
-void System_UI_Init(void)
-{
-    // sys_Counter_Set(TipMinTemp, TipMaxTemp, 5, PID_Setpoint);
-}
 
 #define LPF_Ts 0.001f
-// #define PI 3.1415926f
 
 float one_order_low_pass_filter(const float data_in, const float fc)
 {
@@ -650,7 +458,7 @@ void disp_wifi_pd_ble_status()
     }
     else
     {
-        oled.drawGlyph(120, 0, 0x41);
+        oled.drawGlyph(100, 0, 0x41);
     }
 
     if (wifi_status)
@@ -749,7 +557,6 @@ void main_ui_disp_text(uint8_t disp_channel, float disp_val)
 {
     uint8_t disp_type;
     oled.drawUTF8(0, 1, title_name); // 显示系统名称
-    // Draw_Slow_Bitmap(72, 0, C_table[TEMP_STATUS_OFF], 14, 14);// 状态图标
     switch (disp_channel)
     {
     case ADC_CH1:
@@ -771,7 +578,6 @@ void main_ui_disp_text(uint8_t disp_channel, float disp_val)
 
     char buffer[20];
     sprintf(buffer, "CH[%d]%s", disp_channel + 1, adc_meas_func[disp_type]);
-    // Pop_Windows(buffer);
 
     oled.drawUTF8(1, 12, buffer);
     disp_wifi_pd_ble_status();
@@ -783,16 +589,10 @@ void main_ui_disp_text(uint8_t disp_channel, float disp_val)
     ///////////////////////////////////////////////////////////////////////////////////
     oled.setFont(u8g2_font_wqy12_t_gb2312);
     // 右上角运行指示角标
-
-    // uint8_t TriangleSize = map(disp_val, -20.0, 20, 18, 0);
-    // oled.drawTriangle((119 - 12) + TriangleSize, 12, 125, 12, 125, (18 + 12) - TriangleSize);
-
     /////////////////////////////////////绘制遮罩层//////////////////////////////////////////////
     oled.setDrawColor(2);
     // 几何图形切割
     oled.drawBox(0, 12, 128, 40);
-    // oled.drawTriangle(96, 12, 96, 52, 125, 42);
-    // oled.drawTriangle(125, 42, 96, 52, 118, 52);
     oled.setDrawColor(1);
 
     DrawStatusBar(1, disp_val); // 绘制底部状态条
@@ -852,61 +652,17 @@ void draw_curve(uint32_t val)
         kf_disp.update(adc_disp_val[disp_channel]); // 更新步骤
         ;
         char buffer[20];
-        sprintf(buffer, "CH[%d]%.5lf", disp_channel + 1, adc_disp_val[disp_channel]); // CalculateTemp(count * 64, PTemp));
+        sprintf(buffer, "CH[%d]%.5lf", disp_channel + 1, kf_disp.get_val());
         DrawHighLightText(128 - oled.getUTF8Width(buffer) - 2, 48, buffer);
-        // oled.setDrawColor(2);
         oled.drawHLine(1, 63, 127);
         oled.drawVLine(0, 0, 64);
-        // oled.sendBuffer();
         Display();
         vTaskDelay(100);
     }
 }
+uint8_t DisplayFlashTick = 0;
 
-// 绘制温度曲线
-void DrawTempCurve(void)
-{
-    int x;
-    int count;
-    sys_Counter_Set(0, 63, 1, 0);
-    while (!sys_KeyProcess())
-    {
-        oled.clearBuffer();
-        count = sys_Counter_Get();
-
-        // 绘制参考文字
-        char buffer[20];
-        // sprintf(buffer, "ADC %d", count * 64);
-        // DrawHighLightText(128 - oled.getUTF8Width(buffer) - 2, 36, buffer);
-
-        sprintf(buffer, "CH[%d]%.5lf", disp_channel + 1, adc_disp_val[disp_channel]); // CalculateTemp(count * 64, PTemp));
-        DrawHighLightText(128 - oled.getUTF8Width(buffer) - 2, 48, buffer);
-
-        // 绘制曲线
-        oled.setDrawColor(2);
-        for (int y = 0; y < 64; y++)
-        {
-            x = map(adc_disp_val[disp_channel], 0.0, 5.0, 0, 127);
-            oled.drawPixel(x, 63 - y);
-
-            // 画指示针
-            if (y == count)
-                Draw_Slow_Bitmap(x - 4, 63 - y - 4, PositioningCursor, 8, 8);
-        }
-        oled.setDrawColor(1);
-
-        // 利用抖动产生灰度 绘制底部参考网格
-        if (DisplayFlashTick % 2)
-            for (int yy = 0; yy < 64; yy += 8)
-                for (int xx = 0; xx < 128; xx += 8)
-                    oled.drawPixel(xx + 2, yy + 4);
-
-        Display();
-    }
-}
-
-// 显示曲线系数
-void ShowCurveCoefficient(void)
+void show_curve(void)
 {
     oled.clearBuffer();
     char buffer[50];
@@ -921,14 +677,12 @@ void ShowCurveCoefficient(void)
         Display();
     }
     draw_curve(0);
-    // DrawTempCurve();
 }
 
 void main_ui_disp_curve(uint8_t disp_channel, float disp_val)
 {
     uint8_t disp_type;
     oled.drawUTF8(0, 1, title_name); // 显示系统名称
-    // Draw_Slow_Bitmap(72, 0, C_table[TEMP_STATUS_OFF], 14, 14);// 状态图标
     switch (disp_channel)
     {
     case ADC_CH1:
@@ -950,7 +704,6 @@ void main_ui_disp_curve(uint8_t disp_channel, float disp_val)
 
     char buffer[20];
     sprintf(buffer, "CH[%d]%s", disp_channel + 1, adc_meas_func[disp_type]);
-    // Pop_Windows(buffer);
 
     oled.drawUTF8(1, 12, buffer);
     disp_wifi_pd_ble_status();
@@ -962,16 +715,10 @@ void main_ui_disp_curve(uint8_t disp_channel, float disp_val)
     ///////////////////////////////////////////////////////////////////////////////////
     oled.setFont(u8g2_font_wqy12_t_gb2312);
     // 右上角运行指示角标
-
-    // uint8_t TriangleSize = map(disp_val, -20.0, 20, 18, 0);
-    // oled.drawTriangle((119 - 12) + TriangleSize, 12, 125, 12, 125, (18 + 12) - TriangleSize);
-
     /////////////////////////////////////绘制遮罩层//////////////////////////////////////////////
     oled.setDrawColor(2);
     // 几何图形切割
     oled.drawBox(0, 12, 128, 40);
-    // oled.drawTriangle(96, 12, 96, 52, 125, 42);
-    // oled.drawTriangle(125, 42, 96, 52, 118, 52);
     oled.setDrawColor(1);
 
     DrawStatusBar(1, disp_val); // 绘制底部状态条
@@ -994,8 +741,7 @@ void System_UI(void)
         }
         else // 绘制曲线
         {
-            // draw_curve(adc_r_d_avg[disp_channel]);
-            ShowCurveCoefficient();
+            show_curve();
         }
         if (SYSKey == 2) // 编码器长按按键进入菜单
         {
@@ -1086,9 +832,6 @@ void Exit_Menu_System(void)
     Menu_System_State = 0;
     Menu_JumpAndExit = false;
     Menu_JumpAndExit_Level = 255;
-
-    // 退出菜单后重新初始化主界面
-    System_UI_Init();
 }
 
 // 按照标题进行跳转 标题跳转 跳转标题

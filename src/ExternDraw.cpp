@@ -1,16 +1,10 @@
 #include "externdraw.h"
-uint8_t DisplayFlashTick = 0;
-uint8_t POWER = 0;
-// 温度限制
-#define TipMaxTemp 250
-#define TipMinTemp 0
-double PID_Setpoint = 66.66;
 
-void EnterLogo(void)
+void enter_logo(void)
 {
     Draw_Slow_Bitmap(0, 0, Logo, 128, 64);
     Display();
-    delay(1000);
+    delay(3000);
 
     for (int16_t x = -128; x < 128; x += 12)
     {
@@ -85,7 +79,7 @@ void EnterLogo(void)
     oled.setDrawColor(1);
 }
 
-void ShowBootMsg(void)
+void disp_boot_info(void)
 {
     char buffer[50];
     oled.clearBuffer();

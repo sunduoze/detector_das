@@ -411,7 +411,8 @@ void AD7606C_Serial::convert_18bit_to_32bit(int32_t *unsigned_val, int32_t srcsz
 {
 	unsigned int i;
 	for (i = 0; i < srcsz; i++)
-	{
+	{							  // #Twos Complement Output Coding
+								  // Bipolar Analog Input Ranges
 		if (channel_mode[i] == 0) // BIPOLAR_MODE
 		{
 			pdst[i] = (unsigned_val[i] & 0x00020000) ? (unsigned_val[i] | 0xFFFC0000) : unsigned_val[i];
