@@ -8,22 +8,27 @@ double PID_Setpoint = 66.66;
 
 void EnterLogo(void)
 {
+    Draw_Slow_Bitmap(0, 0, Logo, 128, 64);
+    Display();
+    delay(1000);
 
-    // for (int16_t x=-128;x<128;x+=12) {
-    //     //绘制Logo
-    //     oled.setDrawColor(1);
-    //     Draw_Slow_Bitmap(0, 0, Logo, 128, 64);
-    //     //转场特效
-    //     oled.setBitmapMode(1);
-    //     oled.setDrawColor(0);
+    for (int16_t x = -128; x < 128; x += 12)
+    {
+        // 绘制Logo
+        oled.setDrawColor(1);
+        Draw_Slow_Bitmap(0, 0, Logo, 128, 64);
+        // 转场特效
+        oled.setBitmapMode(1);
+        oled.setDrawColor(0);
 
-    //     oled.drawXBM(x, 0, 128, 64, TranAnimation);
-    //     if (x < 0) oled.drawBox(128 + x, 0, -x, 64);
+        oled.drawXBM(x, 0, 128, 64, TranAnimation2);
+        if (x < 0)
+            oled.drawBox(128 + x, 0, -x, 64);
 
-    //     oled.setBitmapMode(0);
-    //     Display();
-    // }
-    // oled.setDrawColor(1);
+        oled.setBitmapMode(0);
+        Display();
+    }
+    oled.setDrawColor(1);
 
     float rate, i = 1;
     int x, y, w;
@@ -31,9 +36,6 @@ void EnterLogo(void)
 
     while (flag != 2)
     {
-
-        // GetADC0(); // 播放动画是可以同时初始化软件滤波
-
         oled.clearBuffer();
 
         switch (flag)
@@ -52,23 +54,23 @@ void EnterLogo(void)
             break;
         }
 
-        rate = i / 128.0;
-        w = 170 * rate;
-        x = (128 - w) / 2;
+        rate = i / 64.0;
+        w = 64 * rate;
+        x = (64 - w) / 2;
         y = (64 - i - 1) / 2;
-        Draw_Slow_Bitmap_Resize(x, y, Logo2, 170, 128, w, i);
+        Draw_Slow_Bitmap_Resize(x, y, Logo2, 64, 64, w, i);
 
         Display();
     }
 
-    for (int16_t xx = -128; xx < 128; xx += 12)
+    for (int16_t xx = -64; xx < 64; xx += 12)
     {
         // GetADC0(); // 播放动画是可以同时初始化软件滤波
 
         oled.clearBuffer();
         // 绘制Logo
         oled.setDrawColor(1);
-        Draw_Slow_Bitmap_Resize(x, y, Logo2, 170, 128, w, i);
+        Draw_Slow_Bitmap_Resize(x, y, Logo2, 64, 64, w, i);
         // 转场特效
         oled.setBitmapMode(1);
         oled.setDrawColor(0);
@@ -197,12 +199,12 @@ void Draw_Scale(int x, int y, int w, int h, int s, int v)
 void Draw_Num_Bar(float i, float a, float b, int x, int y, int w, int h, int c)
 {
     char buffer[20];
-    sprintf(buffer, "%.2f", i);
+    sprintf(buffer, "%.6f", i);
     uint8_t textWidth = oled.getUTF8Width(buffer) + 3;
 
     oled.setDrawColor(c);
     oled.drawFrame(x, y, w - textWidth - 2, h);
-    oled.drawBox(x + 2, y + 2, map(i, a, b, 0, w - textWidth - 6), h - 4);
+    oled.drawBox(x + 2, y + 2, (u8g2_uint_t)map_f(i, a, b, 0, w - textWidth - 6), h - 4);
 
     oled.drawStr(x + w - textWidth, y - 1, buffer);
     // 进行去棱角操作:增强文字视觉焦点

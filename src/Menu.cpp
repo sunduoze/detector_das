@@ -79,7 +79,7 @@ float UndervoltageAlert = 3;
 float aggKp = 50.0, aggKi = 0.0, aggKd = 0.5;
 float consKp = 30.0, consKi = 1.0, consKd = 0.5;
 
-float psu_set_cv_volt = 16.0f;
+float psu_set_cv_volt = 17.8f;
 float psu_set_cc_curr = 0.5f;
 // 卡尔曼滤波
 typedef struct
@@ -254,25 +254,25 @@ struct Slide_Bar Slide_space[] = {
     {(float *)&KFP_Temp.Q, 0, 5, 0.01},
     {(float *)&KFP_Temp.R, 0, 25, 0.1},
 
-    {(float *)&psu_set_cv_volt, 16.0, 18.0, 0.1},
+    {(float *)&psu_set_cv_volt, 17.8, 19.7, 0.02},
     {(float *)&psu_set_cc_curr, 0.0, 0.5, 0.01},
 
-    {(float *)&adc_cali.adc_gain_ch[ADC_CH1], 0.9, 1.1, 0.001},
-    {(float *)&adc_cali.adc_offset_ch[ADC_CH1], -0.1, 0.1, 0.001},
-    {(float *)&adc_cali.adc_gain_ch[ADC_CH2], 0.9, 1.1, 0.001},
-    {(float *)&adc_cali.adc_offset_ch[ADC_CH2], -0.1, 0.1, 0.001},
-    {(float *)&adc_cali.adc_gain_ch[ADC_CH3], 0.9, 1.1, 0.001},
-    {(float *)&adc_cali.adc_offset_ch[ADC_CH3], -0.1, 0.1, 0.001},
-    {(float *)&adc_cali.adc_gain_ch[ADC_CH4], 0.9, 1.1, 0.001},
-    {(float *)&adc_cali.adc_offset_ch[ADC_CH4], -0.1, 0.1, 0.001},
-    {(float *)&adc_cali.adc_gain_ch[ADC_CH5], 0.9, 1.1, 0.001},
-    {(float *)&adc_cali.adc_offset_ch[ADC_CH5], -0.1, 0.1, 0.001},
-    {(float *)&adc_cali.adc_gain_ch[ADC_CH6], 0.9, 1.1, 0.001},
-    {(float *)&adc_cali.adc_offset_ch[ADC_CH6], -0.1, 0.1, 0.001},
-    {(float *)&adc_cali.adc_gain_ch[ADC_CH7], 4.9, 5.1, 0.001},
-    {(float *)&adc_cali.adc_offset_ch[ADC_CH7], -0.1, 0.1, 0.001},
-    {(float *)&adc_cali.adc_gain_ch[ADC_CH8], -2.1, -1.9, 0.001},
-    {(float *)&adc_cali.adc_offset_ch[ADC_CH8], -0.1, 0.1, 0.001},
+    {(float *)&adc_cali.adc_gain_ch[ADC_CH1], 0.9, 1.1, 0.00002},
+    {(float *)&adc_cali.adc_offset_ch[ADC_CH1], -0.1, 0.1, 0.00002},
+    {(float *)&adc_cali.adc_gain_ch[ADC_CH2], 0.9, 1.1, 0.00002},
+    {(float *)&adc_cali.adc_offset_ch[ADC_CH2], -0.1, 0.1, 0.00002},
+    {(float *)&adc_cali.adc_gain_ch[ADC_CH3], 0.9, 1.1, 0.00002},
+    {(float *)&adc_cali.adc_offset_ch[ADC_CH3], -0.1, 0.1, 0.00002},
+    {(float *)&adc_cali.adc_gain_ch[ADC_CH4], 0.9, 1.1, 0.00002},
+    {(float *)&adc_cali.adc_offset_ch[ADC_CH4], -0.1, 0.1, 0.00002},
+    {(float *)&adc_cali.adc_gain_ch[ADC_CH5], 0.9, 1.1, 0.00002},
+    {(float *)&adc_cali.adc_offset_ch[ADC_CH5], -0.1, 0.1, 0.00002},
+    {(float *)&adc_cali.adc_gain_ch[ADC_CH6], 0.9, 1.1, 0.00002},
+    {(float *)&adc_cali.adc_offset_ch[ADC_CH6], -0.1, 0.1, 0.00002},
+    {(float *)&adc_cali.adc_gain_ch[ADC_CH7], 4.9, 5.1, 0.00002},
+    {(float *)&adc_cali.adc_offset_ch[ADC_CH7], -0.1, 0.1, 0.00002},
+    {(float *)&adc_cali.adc_gain_ch[ADC_CH8], -2.1, -1.9, 0.00002},
+    {(float *)&adc_cali.adc_offset_ch[ADC_CH8], -0.1, 0.1, 0.00002},
 
     {(float *)&ADC_PID_Cycle_List[0], 25, 2000, 25},
     {(float *)&ADC_PID_Cycle_List[1], 25, 2000, 25},
@@ -376,7 +376,8 @@ void switch_disp_adc_ch()
 }
 void psu_set()
 {
-    Serial.printf("psu_set_cv_volt:%f\r\n", psu_set_cv_volt);
+    // Serial.printf("psu_set_cv_volt:%f\r\n", psu_set_cv_volt);
+    digital_pot.set_res_val((uint32_t)map_f(psu_set_cv_volt, 17.8, 19.8, 0, 2e4));
 }
 void SaveTipConfig(void)
 {
@@ -410,17 +411,16 @@ struct Menu_System Menu[] = {
     {0, 3, F_Menu_Op, "返回", Menu_NULL_IMG, 0, 0, *Save_Exit_Menu_System},
 
     {1, 0, Title_Menu_Op, "[显示设置]", Menu_NULL_IMG, 0, 1, Menu_NULL_F},
-    {1, 1, Jump_Menu_Op, "主界面显示", IMG_Tip, 2, 0, Menu_NULL_F},
-    {1, 2, Jump_Menu_Op, "系统校准", Set1, 15, 0, Menu_NULL_F},
-    {1, 3, Jump_Menu_Op, "可调电源设置", Set3, 19, 0, Menu_NULL_F},
+    {1, 1, Jump_Menu_Op, "主界面显示", IMG_Main, 2, 0, Menu_NULL_F},
+    {1, 2, Jump_Menu_Op, "系统校准", IMG_Calibration, 15, 0, Menu_NULL_F},
+    {1, 3, Jump_Menu_Op, "可调电源设置", IMG_Adj_PSU, 19, 0, Menu_NULL_F},
     {1, 4, Jump_Menu_Op, "返回", Set7, 0, 1, Menu_NULL_F},
 
     {2, 0, Title_Menu_Op, "[主界面显示]", Menu_NULL_IMG, 1, 1, Menu_NULL_F},
-    {2, 1, Jump_Menu_Op, "切换显示ADC通道", Set8, 3, 0, Menu_NULL_F}, //*FlashTipMenu},
-    {2, 2, Jump_Menu_Op, "显示方式", Set8, 4, 0, Menu_NULL_F},        //*FlashTipMenu},
-    // {2, 2, F_Menu_Op, "查看温度曲线", Set0, 0, 0, *ShowCurveCoefficient},
+    {2, 1, Jump_Menu_Op, "切换显示ADC通道", IMG_SW_ADC_CH, 3, 0, Menu_NULL_F}, //*FlashTipMenu},
+    {2, 2, Jump_Menu_Op, "显示方式", Set8, 4, 0, Menu_NULL_F},                 //*FlashTipMenu},
     // {2, 3, F_Menu_Op, "校准温度", Set9, 0, 0, *CalibrationTemperature},
-    {2, 3, Jump_Menu_Op, "返回", Save, 1, 1, Menu_NULL_F},
+    {2, 3, Jump_Menu_Op, "返回", Set7, 1, 1, Menu_NULL_F},
 
     {3, 0, Title_Menu_Op, "[切换显示ADC通道]", Menu_NULL_IMG, 2, 1, *switch_disp_adc_ch},
     {3, 1, SingleBox_Menu_Op, "1 TCD信号", Menu_NULL_IMG, SwitchSpace_disp_channel, 0, *JumpWithTitle},
@@ -433,14 +433,14 @@ struct Menu_System Menu[] = {
     {3, 8, SingleBox_Menu_Op, "8 电流测量", Menu_NULL_IMG, SwitchSpace_disp_channel, 7, *JumpWithTitle},
 
     {4, 0, Title_Menu_Op, "[显示方式]", Menu_NULL_IMG, 2, 2, Menu_NULL_F},
-    {4, 1, SingleBox_Menu_Op, "数值", IMG_Animation, SwitchSpace_disp_method, false, *JumpWithTitle},
-    {4, 2, SingleBox_Menu_Op, "曲线", IMG_Animation_DISABLE, SwitchSpace_disp_method, true, *JumpWithTitle},
+    {4, 1, SingleBox_Menu_Op, "数值", IMG_Number, SwitchSpace_disp_method, false, *JumpWithTitle},
+    {4, 2, SingleBox_Menu_Op, "曲线", IMG_Curve, SwitchSpace_disp_method, true, *JumpWithTitle},
 
     {5, 0, Title_Menu_Op, "系统配置", Menu_NULL_IMG, 0, 2, Menu_NULL_F},
     {5, 1, Jump_Menu_Op, "个性化", IMG_Pen, 6, 0, Menu_NULL_F},
     {5, 2, Jump_Menu_Op, "蓝牙", IMG_BLE, 22, 0, Menu_NULL_F},
     {5, 3, Progress_Bar_Menu_Op, "欠压提醒", Set6, Slide_space_UndervoltageAlert, 0, Menu_NULL_F},
-    {5, 4, Jump_Menu_Op, "Wi-Fi", IMG_BLE, 23, 0, Menu_NULL_F},
+    {5, 4, Jump_Menu_Op, "Wi-Fi", IMG_WIFI, 23, 0, Menu_NULL_F},
     {5, 5, Jump_Menu_Op, "语言设置", Set_LANG, 13, 0, Menu_NULL_F},
     {5, 6, Jump_Menu_Op, "返回", Set7, 0, 2, Menu_NULL_F},
 
@@ -495,22 +495,22 @@ struct Menu_System Menu[] = {
     {14, 2, SingleBox_Menu_Op, "干簧管", IMG_ReedSwitch, SwitchSpace_HandleTrigger, 1, *JumpWithTitle},
 
     {15, 0, Title_Menu_Op, "[系统校准]", Menu_NULL_IMG, 1, 2, *save_calibration_para},
-    {15, 1, Progress_Bar_Menu_Op, "通道1-增益G", Menu_NULL_IMG, Slide_space_ADC_CH1_Gain, 0, Menu_NULL_F},
-    {15, 2, Progress_Bar_Menu_Op, "通道1-失调O", Menu_NULL_IMG, Slide_space_ADC_CH1_Offset, 0, Menu_NULL_F},
-    {15, 3, Progress_Bar_Menu_Op, "通道2-增益G", Menu_NULL_IMG, Slide_space_ADC_CH2_Gain, 0, Menu_NULL_F},
-    {15, 4, Progress_Bar_Menu_Op, "通道2-失调O", Menu_NULL_IMG, Slide_space_ADC_CH2_Offset, 0, Menu_NULL_F},
-    {15, 5, Progress_Bar_Menu_Op, "通道3-增益G", Menu_NULL_IMG, Slide_space_ADC_CH3_Gain, 0, Menu_NULL_F},
-    {15, 6, Progress_Bar_Menu_Op, "通道3-失调O", Menu_NULL_IMG, Slide_space_ADC_CH3_Offset, 0, Menu_NULL_F},
-    {15, 7, Progress_Bar_Menu_Op, "通道4-增益G", Menu_NULL_IMG, Slide_space_ADC_CH4_Gain, 0, Menu_NULL_F},
-    {15, 8, Progress_Bar_Menu_Op, "通道4-失调O", Menu_NULL_IMG, Slide_space_ADC_CH4_Offset, 0, Menu_NULL_F},
-    {15, 9, Progress_Bar_Menu_Op, "通道5-增益G", Menu_NULL_IMG, Slide_space_ADC_CH5_Gain, 0, Menu_NULL_F},
-    {15, 10, Progress_Bar_Menu_Op, "通道5-失调O", Menu_NULL_IMG, Slide_space_ADC_CH5_Offset, 0, Menu_NULL_F},
-    {15, 11, Progress_Bar_Menu_Op, "通道6-增益G", Menu_NULL_IMG, Slide_space_ADC_CH6_Gain, 0, Menu_NULL_F},
-    {15, 12, Progress_Bar_Menu_Op, "通道6-失调O", Menu_NULL_IMG, Slide_space_ADC_CH6_Offset, 0, Menu_NULL_F},
-    {15, 13, Progress_Bar_Menu_Op, "通道7-增益G", Menu_NULL_IMG, Slide_space_ADC_CH7_Gain, 0, Menu_NULL_F},
-    {15, 14, Progress_Bar_Menu_Op, "通道7-失调O", Menu_NULL_IMG, Slide_space_ADC_CH7_Offset, 0, Menu_NULL_F},
-    {15, 15, Progress_Bar_Menu_Op, "通道8-增益G", Menu_NULL_IMG, Slide_space_ADC_CH8_Gain, 0, Menu_NULL_F},
-    {15, 16, Progress_Bar_Menu_Op, "通道8-失调O", Menu_NULL_IMG, Slide_space_ADC_CH8_Offset, 0, Menu_NULL_F},
+    {15, 1, Progress_Bar_Menu_Op, "通道1-G", Menu_NULL_IMG, Slide_space_ADC_CH1_Gain, 0, Menu_NULL_F},
+    {15, 2, Progress_Bar_Menu_Op, "通道1-O", Menu_NULL_IMG, Slide_space_ADC_CH1_Offset, 0, Menu_NULL_F},
+    {15, 3, Progress_Bar_Menu_Op, "通道2-G", Menu_NULL_IMG, Slide_space_ADC_CH2_Gain, 0, Menu_NULL_F},
+    {15, 4, Progress_Bar_Menu_Op, "通道2-O", Menu_NULL_IMG, Slide_space_ADC_CH2_Offset, 0, Menu_NULL_F},
+    {15, 5, Progress_Bar_Menu_Op, "通道3-G", Menu_NULL_IMG, Slide_space_ADC_CH3_Gain, 0, Menu_NULL_F},
+    {15, 6, Progress_Bar_Menu_Op, "通道3-O", Menu_NULL_IMG, Slide_space_ADC_CH3_Offset, 0, Menu_NULL_F},
+    {15, 7, Progress_Bar_Menu_Op, "通道4-G", Menu_NULL_IMG, Slide_space_ADC_CH4_Gain, 0, Menu_NULL_F},
+    {15, 8, Progress_Bar_Menu_Op, "通道4-O", Menu_NULL_IMG, Slide_space_ADC_CH4_Offset, 0, Menu_NULL_F},
+    {15, 9, Progress_Bar_Menu_Op, "通道5-G", Menu_NULL_IMG, Slide_space_ADC_CH5_Gain, 0, Menu_NULL_F},
+    {15, 10, Progress_Bar_Menu_Op, "通道5-O", Menu_NULL_IMG, Slide_space_ADC_CH5_Offset, 0, Menu_NULL_F},
+    {15, 11, Progress_Bar_Menu_Op, "通道6-G", Menu_NULL_IMG, Slide_space_ADC_CH6_Gain, 0, Menu_NULL_F},
+    {15, 12, Progress_Bar_Menu_Op, "通道6-O", Menu_NULL_IMG, Slide_space_ADC_CH6_Offset, 0, Menu_NULL_F},
+    {15, 13, Progress_Bar_Menu_Op, "通道7-G", Menu_NULL_IMG, Slide_space_ADC_CH7_Gain, 0, Menu_NULL_F},
+    {15, 14, Progress_Bar_Menu_Op, "通道7-O", Menu_NULL_IMG, Slide_space_ADC_CH7_Offset, 0, Menu_NULL_F},
+    {15, 15, Progress_Bar_Menu_Op, "通道8-G", Menu_NULL_IMG, Slide_space_ADC_CH8_Gain, 0, Menu_NULL_F},
+    {15, 16, Progress_Bar_Menu_Op, "通道8-O", Menu_NULL_IMG, Slide_space_ADC_CH8_Offset, 0, Menu_NULL_F},
     {15, 17, Jump_Menu_Op, "返回", Menu_NULL_IMG, 1, 2, *save_calibration_para},
 
     {16, 0, Title_Menu_Op, "PID参数", Menu_NULL_IMG, 2, 3, Menu_NULL_F},
@@ -533,7 +533,7 @@ struct Menu_System Menu[] = {
     {19, 0, Title_Menu_Op, "[可调电源设置]", Menu_NULL_IMG, 1, 3, *psu_set},
     {19, 1, Progress_Bar_Menu_Op, "恒压电压", Menu_NULL_IMG, Slide_space_psu_set_cv_volt, 0, Menu_NULL_F},
     {19, 2, Progress_Bar_Menu_Op, "恒流电流", Menu_NULL_IMG, Slide_space_psu_set_cc_curr, 0, Menu_NULL_F},
-    {19, 3, Jump_Menu_Op, "返回", Menu_NULL_IMG, 1, 3, Menu_NULL_F},
+    {19, 3, Jump_Menu_Op, "返回", Menu_NULL_IMG, 1, 3, *psu_set},
 
     {20, 0, Title_Menu_Op, "卡尔曼滤波器", Menu_NULL_IMG, 19, 4, Menu_NULL_F},
     {20, 1, Switch_Menu_Op, "启用状态", Menu_NULL_IMG, SwitchSpace_KFP, 0, Menu_NULL_F},
@@ -578,47 +578,6 @@ void FlashTipMenu(void)
     }
 }
 
-// /***
-//  * @description: 快速打开烙铁列表
-//  * @param {*}
-//  * @return {*}
-//  */
-// void System_TipMenu_Init(void)
-// {
-//     Serial.printf("尝试切换ADC显示通道\n");
-//     // 初始化菜单
-//     FlashTipMenu(); // 刷新菜单系统烙铁列表
-
-//     Menu_JumpAndExit = true;    // 菜单标志：“跳转即退出” 在设置完Tip后自动退出菜单
-//     Menu_JumpAndExit_Level = 2; // 当菜单进行跳转操作，跳转到该 Menu_JumpAndExit_Level 层后检查“跳转即退出” 标志
-
-//     MenuLevel[15].x = 0;                    // 复位第一层菜单的位置
-//     MenuLevelId = 15;                       // 设定跳转目标
-//     *Slide_space[Slide_space_Scroll].x = 0; // 复位第一层菜单的位置
-//     Next_Menu();
-// }
-// /***
-//  * @description: 快速打开PID菜单
-//  * @param {*}
-//  * @return {*}
-//  */
-// void System_PIDMenu_Init(void)
-// {
-//     Serial.printf("尝试打开PID菜单\n");
-//     // 关闭功率管输出
-//     // SetPOWER(0);
-//     // 初始化菜单
-//     FlashTipMenu(); // 刷新菜单系统烙铁列表
-
-//     Menu_JumpAndExit = true;    // 菜单标志：“跳转即退出” 在设置完Tip后自动退出菜单
-//     Menu_JumpAndExit_Level = 2; // 当菜单进行跳转操作，跳转到该 Menu_JumpAndExit_Level 层后检查“跳转即退出” 标志
-
-//     MenuLevel[16].x = 0;                    // 复位第一层菜单的位置
-//     MenuLevelId = 16;                       // 设定跳转目标
-//     *Slide_space[Slide_space_Scroll].x = 0; // 复位第一层菜单的位置
-//     Next_Menu();
-//     Serial.printf("菜单状态:%d\n", Menu_System_State);
-// }
 // 实现四舍五入函数
 double round_to_decimal(double num, int decimal_places)
 {
@@ -952,25 +911,11 @@ void ShowCurveCoefficient(void)
     oled.clearBuffer();
     char buffer[50];
 
-    if (disp_channel >= ADC_CH4)
-    {
-        for (uint8_t i = 0; i < 4; i++)
-        {
-            sprintf(buffer, "P[%d]=%.8lf\n", i + 1, adc_disp_val[i]);
-            oled.setCursor(12, i * 12 + 8);
-            oled.print(buffer);
-        }
-    }
-    else
-    {
-        for (uint8_t i = 3; i < 8; i++)
-        {
-            sprintf(buffer, "P[%d]=%.8lf\n", i + 1, adc_disp_val[i]);
-            oled.setCursor(12, (i - 3) * 12 + 8);
-            oled.print(buffer);
-        }
-    }
-
+    Draw_Slow_Bitmap(0, 0, Logo, 128, 64);
+    Display();
+    char buffer1[30];
+    sprintf(buffer1, "多通道微型GC采集单元");
+    DrawHighLightText(0, 50, buffer1);
     while (!sys_KeyProcess())
     {
         Display();
@@ -1608,7 +1553,7 @@ void Menu_Control()
 
     // 计算过渡动画
     if (*Switch_space[SwitchSpace_SmoothAnimation])
-        Smooth_Animation_System();
+        Smooth_Animation _System();
 
     // 分别获取 菜单层、菜单项 索引值
     real_Level_Id = Get_Real_Menu_Level_Id(MenuLevelId);
@@ -1661,7 +1606,7 @@ void Menu_Control()
                 // 滑动条
                 case 4:
                     char buffer[20];
-                    sprintf(buffer, "%.3f", *Slide_space[Menu[Get_Menu_Id(real_Level_Id, MenuLevel[real_Level_Id].x + i)].a].x);
+                    sprintf(buffer, "%.6f", *Slide_space[Menu[Get_Menu_Id(real_Level_Id, MenuLevel[real_Level_Id].x + i)].a].x);
                     Draw_Utf(SCREEN_COLUMN - 9 - oled.getUTF8Width(buffer),
                              (int)((i + Menu_Smooth_Animation[0].x) * 16),
                              buffer);

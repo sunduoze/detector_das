@@ -16,12 +16,8 @@
 #define PP12V5 0.00004768f
 #define PP10V0 0.00003815f
 #define PP5V00 0.00001907f
-
-/*BIPOLAR_CODE_TO_VOLT*/
-// #define BC2V(code, range_lsb) (((code - 1) & 0x20000) == 0x20000) ? (-((code)-0x40000) * -range_lsb) : ((code) * range_lsb)
-#define BC2V(code, range_lsb) (code) * range_lsb
-/*UNIPOLAR_CODE_TO_VOLT*/
-#define UC2V(code, range_lsb) (code) * range_lsb
+/*code to voltage*/
+#define C2V(code, range_lsb) (code) * range_lsb
 
 enum
 {
@@ -33,6 +29,12 @@ enum
 	ADC_CH6 = 0x5,
 	ADC_CH7 = 0x6,
 	ADC_CH8 = 0x7
+};
+
+enum
+{
+	BIPOLAR_MODE = 0,
+	UNIPOLAR_MODE = 1
 };
 
 class AD7606C
@@ -88,6 +90,7 @@ protected:
 	// uninitalised pointers to SPI objects
 	//  SPIClass * vspi = NULL;
 	SPIClass *hspi = NULL;
+	uint8_t channel_mode[ADC_ALL_CH];
 	// static int32_t cpy18b32b(uint8_t *psrc, uint32_t srcsz, uint32_t *pdst);
 	// static int32_t cpy26b32b(uint8_t *psrc, uint32_t srcsz, uint32_t *pdst);
 
@@ -98,9 +101,13 @@ public:
 	uint8_t read_reg(uint8_t, uint8_t *);
 	uint8_t write_reg(uint8_t reg_addr, uint8_t reg_val);
 	uint8_t write_and_chk_reg(uint8_t reg_addr, uint8_t reg_val);
+
+	void convert_18bit_to_32bit(int32_t *unsigned_val, int32_t srcsz, int32_t *pdst);
+
 	uint8_t data_read(int32_t *data);
 	int32_t read(int32_t *data);	  // Read raw values from ADC
 	int32_t fast_read(int32_t *data); // fast read last conv raw values from ADC
+
 	void config(void);
 	void debug(void);
 	uint8_t check_id(void);

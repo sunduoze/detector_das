@@ -5,6 +5,7 @@
 
 // 128x64
 extern uint8_t Logo[];
+extern uint8_t Logo3[];
 // width: 170, height: 128
 extern uint8_t Logo2[];
 
@@ -43,18 +44,23 @@ extern uint8_t Load[];
 extern uint8_t Lock[];
 extern uint8_t Set19[];
 extern uint8_t IMG_Pen[];
-extern uint8_t IMG_Pen2[];
-extern uint8_t IMG_Tip[];
+extern uint8_t IMG_SW_ADC_CH[];
+extern uint8_t IMG_Calibration[];
+extern uint8_t IMG_Adj_PSU[];
+extern uint8_t IMG_Main[];
 extern uint8_t IMG_Files[];
 extern uint8_t IMG_Flip[];
 extern uint8_t IMG_Sun[];
 extern uint8_t IMG_Size[];
 extern uint8_t IMG_Animation[];
 extern uint8_t IMG_Animation_DISABLE[];
+extern uint8_t IMG_Number[];
+extern uint8_t IMG_Curve[];
 extern uint8_t IMG_Trigger[];
 extern uint8_t IMG_VibrationSwitch[];
 extern uint8_t IMG_ReedSwitch[];
 extern uint8_t IMG_BLE[];
+extern uint8_t IMG_WIFI[];
 extern uint8_t IMG_ListMode[];
 
 extern uint8_t IMG_Load[];

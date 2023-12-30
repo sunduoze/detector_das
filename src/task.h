@@ -18,6 +18,7 @@
 #include "externdraw.h"
 #include "menu.h"
 #include "AD7606C.h"
+#include "ad5272.h"
 
 extern char ssid[];        // wifi名
 extern char password[];    // wifi密码
@@ -64,6 +65,7 @@ extern adc_calibration_ adc_cali;
 extern KalmanFilter kf_disp;
 extern KalmanFilter kf_main_ui;
 extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled;
+extern AD5272 digital_pot;
 
 extern float adc_disp_val[ADC_ALL_CH];
 extern int32_t adc_r_d_avg[ADC_ALL_CH];
@@ -85,4 +87,6 @@ extern void xTask_rotK(void *xTask);
 extern void xTask_blex(void *xTask);
 
 extern void get_sin(void);
+extern float map_f(float x, float in_min, float in_max, float out_min, float out_max);
+
 #endif

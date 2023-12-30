@@ -11,7 +11,6 @@
 #include "event.h"
 #include "rotary.h"
 #include "beep.h"
-#include "ad5272.h"
 
 uint8_t *C_table[] = {c1, c2, c3, Lightning, c5, c6, c7};
 
@@ -44,9 +43,7 @@ AD7606C_Serial AD7606C_18(ADC_CONVST, ADC_BUSY);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA); // ESP32 Thing, HW I2C with pin remapping
 // U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA); // ESP32 Thing, HW I2C with pin remapping
 class PD_UFP_c PD_UFP;
-
-#define POT_ADDR 0x2E
-AD5272 digital_pot(POT_ADDR); // creates communication object with address 0x2E
+AD5272 digital_pot(POT_ADDR_NC);
 
 uint8_t pd_init(void)
 {
@@ -134,22 +131,31 @@ uint8_t wifi_init()
 
 void adc_init()
 {
-	for (uint8_t i = 0; i < ADC_ALL_CH; i++)
-	{
-		adc_cali.adc_gain_ch[i] = 1.0f;
-		adc_cali.adc_offset_ch[i] = 0.0f;
-	}
-	adc_cali.adc_gain_ch[ADC_CH7] = 5.0f;
-	adc_cali.adc_gain_ch[ADC_CH8] = -2.0f; // curr = volt / 100 / 0.005R
+	adc_cali.adc_gain_ch[ADC_CH1] = 1.0f;
+	adc_cali.adc_offset_ch[ADC_CH1] = -0.017699; //-0.017547;
+
+	adc_cali.adc_gain_ch[ADC_CH2] = 1.00429f;	 // 未校准
+	adc_cali.adc_offset_ch[ADC_CH2] = -0.017547; // 未校准
+
+	adc_cali.adc_gain_ch[ADC_CH3] = 0.997993;
+	adc_cali.adc_offset_ch[ADC_CH3] = -0.01098;
+
+	adc_cali.adc_gain_ch[ADC_CH4] = 1.000207f;
+	adc_cali.adc_offset_ch[ADC_CH4] = -0.00011;
+
+	adc_cali.adc_gain_ch[ADC_CH5] = 1.000132f;
+	adc_cali.adc_offset_ch[ADC_CH5] = 0.0;
+
+	adc_cali.adc_gain_ch[ADC_CH6] = 0.999882f;
+	adc_cali.adc_offset_ch[ADC_CH6] = 0.0;
+
+	adc_cali.adc_gain_ch[ADC_CH7] = 5.0f * 1.000188f;
+	adc_cali.adc_offset_ch[ADC_CH7] = 0.0;
+
+	adc_cali.adc_gain_ch[ADC_CH8] = -2.0f * 1.000188f; // 未校准增益 curr = volt / 100 / 0.005R
+	adc_cali.adc_offset_ch[ADC_CH8] = 0.00605;
 
 	AD7606C_18.config();
-	// AD7606C_18.get_all_reg_val();
-
-	AD7606C_18.read(adc_raw_data);
-	for (uint8_t i = 0; i < 8; i++)
-	{
-		Serial.printf("[debug]0x%.2d=0x%.8x\r\n", i, adc_raw_data[i]);
-	}
 }
 
 void oled_init()
@@ -186,6 +192,10 @@ void ad527x_init()
 	ret = digital_pot.read_rdac();
 	Serial.print("New RDAC Value: ");
 	Serial.println(ret, DEC);
+
+	ret = digital_pot.set_res_val(0);
+	if (ret != 0) // check if data is sent successfully
+		Serial.println("Error!");
 }
 
 uint64_t ChipMAC;
@@ -212,6 +222,8 @@ void hardware_init(void)
 
 	oled_init();
 	ShowBootMsg();
+	delay(500);
+	EnterLogo();
 
 	if (digital_pot.init() != 0)
 	{
@@ -245,7 +257,6 @@ void get_sin(void)
 	}
 }
 
-
 void xTask_oled(void *xTask)
 {
 	while (1)
@@ -265,29 +276,26 @@ void xTask_oled(void *xTask)
 	}
 }
 
-#define WINDOW_SIZE 3
-
 /*
- * @TODO: 去噪点&平滑滤波，not 平均滤波
+ *
  *
  */
 void xTask_dbgx(void *xTask)
 {
+	// Serial.print("core[");
+	// Serial.print(xTaskGetAffinity(xTask));
+	// Serial.printf("]xTask_dbg \r\n");
 	while (1)
 	{
-		// Serial.print("core[");
-		// Serial.print(xTaskGetAffinity(xTask));
-		// Serial.printf("]xTask_dbg \r\n");
-		adc_disp_val[ADC_CH1] = BC2V(adc_r_d_avg[ADC_CH1], PN20V0) * adc_cali.adc_gain_ch[ADC_CH1] + adc_cali.adc_offset_ch[ADC_CH1];
-		adc_disp_val[ADC_CH2] = BC2V(adc_r_d_avg[ADC_CH2], PN20V0) * adc_cali.adc_gain_ch[ADC_CH2] + adc_cali.adc_offset_ch[ADC_CH2];
-		adc_disp_val[ADC_CH3] = BC2V(adc_r_d_avg[ADC_CH3], PN20V0) * adc_cali.adc_gain_ch[ADC_CH3] + adc_cali.adc_offset_ch[ADC_CH3];
-		adc_disp_val[ADC_CH4] = BC2V(adc_r_d_avg[ADC_CH4], PP5V00) * adc_cali.adc_gain_ch[ADC_CH4] + adc_cali.adc_offset_ch[ADC_CH4];
-		adc_disp_val[ADC_CH5] = BC2V(adc_r_d_avg[ADC_CH5], PP5V00) * adc_cali.adc_gain_ch[ADC_CH5] + adc_cali.adc_offset_ch[ADC_CH5];
-		adc_disp_val[ADC_CH6] = BC2V(adc_r_d_avg[ADC_CH6], PP10V0) * adc_cali.adc_gain_ch[ADC_CH6] + adc_cali.adc_offset_ch[ADC_CH6];
-		adc_disp_val[ADC_CH7] = BC2V(adc_r_d_avg[ADC_CH7], PP5V00) * adc_cali.adc_gain_ch[ADC_CH7] + adc_cali.adc_offset_ch[ADC_CH7];
-		adc_disp_val[ADC_CH8] = BC2V(adc_r_d_avg[ADC_CH8], PN5V00) * adc_cali.adc_gain_ch[ADC_CH8] + adc_cali.adc_offset_ch[ADC_CH8];
-
-		// Serial.printf("[%6d %6d %6d %6d][%6d %6d %6d %.6f]\r\n", adc_raw_data[0], adc_raw_data[1], adc_raw_data[2], adc_raw_data[3], adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], BC2V(adc_r_d_avg[ADC_CH8], PN5V00));
+		adc_disp_val[ADC_CH1] = (C2V(adc_r_d_avg[ADC_CH1], PN20V0) + adc_cali.adc_offset_ch[ADC_CH1]) * adc_cali.adc_gain_ch[ADC_CH1];
+		adc_disp_val[ADC_CH2] = (C2V(adc_r_d_avg[ADC_CH2], PN20V0) + adc_cali.adc_offset_ch[ADC_CH2]) * adc_cali.adc_gain_ch[ADC_CH2];
+		adc_disp_val[ADC_CH3] = (C2V(adc_r_d_avg[ADC_CH3], PN20V0) + adc_cali.adc_offset_ch[ADC_CH3]) * adc_cali.adc_gain_ch[ADC_CH3];
+		adc_disp_val[ADC_CH4] = (C2V(adc_r_d_avg[ADC_CH4], PP5V00) + adc_cali.adc_offset_ch[ADC_CH4]) * adc_cali.adc_gain_ch[ADC_CH4];
+		adc_disp_val[ADC_CH5] = (C2V(adc_r_d_avg[ADC_CH5], PP5V00) + adc_cali.adc_offset_ch[ADC_CH5]) * adc_cali.adc_gain_ch[ADC_CH5];
+		adc_disp_val[ADC_CH6] = (C2V(adc_r_d_avg[ADC_CH6], PP10V0) + adc_cali.adc_offset_ch[ADC_CH6]) * adc_cali.adc_gain_ch[ADC_CH6];
+		adc_disp_val[ADC_CH7] = (C2V(adc_r_d_avg[ADC_CH7], PP5V00) + adc_cali.adc_offset_ch[ADC_CH7]) * adc_cali.adc_gain_ch[ADC_CH7];
+		adc_disp_val[ADC_CH8] = (C2V(adc_r_d_avg[ADC_CH8], PN5V00) + adc_cali.adc_offset_ch[ADC_CH8]) * adc_cali.adc_gain_ch[ADC_CH8];
+		// Serial.printf("[%6d %6d %6d %6d][%6d %6d %6d %.6f]\r\n", adc_raw_data[0], adc_raw_data[1], adc_raw_data[2], adc_raw_data[3], adc_raw_data[4], adc_raw_data[5], adc_raw_data[6], C2V(adc_r_d_avg[ADC_CH8], PN5V00));
 		vTaskDelay(100);
 	}
 }
@@ -295,17 +303,16 @@ void xTask_dbgx(void *xTask)
 void xTask_adcx(void *xTask)
 {
 	static uint16_t cnt;
+	// Serial.print("core[");
+	// Serial.print(xTaskGetAffinity(xTask));
+	// Serial.printf("]xTask_adc \r\n");
+	// Serial.print("tsk_adc: ");
+	// Serial.println(millis());
 	while (1)
 	{
-		// Serial.print("core[");
-		// Serial.print(xTaskGetAffinity(xTask));
-		// Serial.printf("]xTask_adc \r\n");
-		// Serial.print("tsk_adc: ");
-		// Serial.println(millis());
 		AD7606C_18.fast_read(adc_raw_data);
 		for (uint8_t i = 0; i < 8; i++)
 		{
-			// adc_norm_data[i] = convert_18bit_to_32bit(adc_raw_data[i]);
 			adc_raw_data_sum_256[i] += adc_raw_data[i];
 		}
 		if (++cnt >= 256)
@@ -338,11 +345,11 @@ void xTask_wifi(void *xTask)
 			{
 				conn_wifi = 1;
 				client.printf("%2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f, %2.6f\r\n",
-							  BC2V(adc_r_d_avg[ADC_CH1], PN20V0), BC2V(adc_r_d_avg[ADC_CH2], PN20V0),
-							  UC2V(adc_r_d_avg[ADC_CH3], PN20V0), BC2V(adc_r_d_avg[ADC_CH4], PP5V00),
-							  BC2V(adc_r_d_avg[ADC_CH5], PP5V00), BC2V(adc_r_d_avg[ADC_CH6], PP10V0),
-							  BC2V(adc_r_d_avg[ADC_CH7], PP5V00) * adc_cali.adc_gain_ch[ADC_CH7] + adc_cali.adc_offset_ch[ADC_CH7],
-							  BC2V(adc_r_d_avg[ADC_CH8], PN5V00) * adc_cali.adc_gain_ch[ADC_CH8] + adc_cali.adc_offset_ch[ADC_CH8]);
+							  adc_disp_val[ADC_CH1], adc_disp_val[ADC_CH2],
+							  adc_disp_val[ADC_CH3], adc_disp_val[ADC_CH4],
+							  adc_disp_val[ADC_CH5], adc_disp_val[ADC_CH6],
+							  adc_disp_val[ADC_CH7], adc_disp_val[ADC_CH8],
+							  adc_disp_val[ADC_CH1], adc_disp_val[ADC_CH2]);
 
 				// if (client.available()) // 如果有数据可读取
 				// {
@@ -470,9 +477,9 @@ void xTask_blex2(void *xTask)
 	while (1)
 	{
 		time = millis() / 1000.0;
-		data0 = BC2V(adc_r_d_avg[0], PN10V0);
-		data3 = BC2V(adc_r_d_avg[3], PN10V0);
-		data4 = BC2V(adc_r_d_avg[4], PN10V0);
+		data0 = C2V(adc_r_d_avg[0], PN10V0);
+		data3 = C2V(adc_r_d_avg[3], PN10V0);
+		data4 = C2V(adc_r_d_avg[4], PN10V0);
 		PhyphoxBLE::write(time, data0, data3, data4);
 		vTaskDelay(100);
 		PhyphoxBLE::poll(); // Only required for the Arduino Nano 33 IoT, but it does no harm for other boards.
@@ -670,4 +677,17 @@ void draw(const char *s, uint8_t symbol, int degree)
 		if (offset > len * 8 + 1)
 			break;
 	}
+}
+
+float map_f(float x, float in_min, float in_max, float out_min, float out_max)
+{
+	const float run = in_max - in_min;
+	if (run == 0)
+	{
+		log_e("map(): Invalid input range, min == max");
+		return -1; // AVR returns -1, SAM returns 0
+	}
+	const float rise = out_max - out_min;
+	const float delta = x - in_min;
+	return (delta * rise) / run + out_min;
 }

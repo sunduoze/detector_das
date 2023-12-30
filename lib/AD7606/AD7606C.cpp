@@ -355,6 +355,15 @@ void AD7606C_Serial::config(void)
 	write_and_chk_reg(AD7606_REG_RANGE_CH_ADDR(5), 0x65); // channel5  => 0 V to 5 V single-ended range channel6 => 0 V to 10 V single-ended range.
 	write_and_chk_reg(AD7606_REG_RANGE_CH_ADDR(7), 0x15); // channel7  => 0 V to 5 V single-ended range channel8 => ±5 V single-ended range.
 
+	channel_mode[ADC_CH1] = BIPOLAR_MODE;
+	channel_mode[ADC_CH2] = BIPOLAR_MODE;
+	channel_mode[ADC_CH3] = BIPOLAR_MODE;
+	channel_mode[ADC_CH4] = UNIPOLAR_MODE;
+	channel_mode[ADC_CH5] = UNIPOLAR_MODE;
+	channel_mode[ADC_CH6] = UNIPOLAR_MODE;
+	channel_mode[ADC_CH7] = UNIPOLAR_MODE;
+	channel_mode[ADC_CH8] = BIPOLAR_MODE;
+
 	write_reg(0, 0); // exti register mode & get into ADC mode
 }
 
@@ -398,12 +407,19 @@ static int32_t cpy26b32b(uint8_t *psrc, uint32_t srcsz, uint32_t *pdst)
 	return 0;
 }
 
-static inline void convert_18bit_to_32bit(int32_t *unsigned_val, int32_t srcsz, int32_t *pdst)
+void AD7606C_Serial::convert_18bit_to_32bit(int32_t *unsigned_val, int32_t srcsz, int32_t *pdst)
 {
 	unsigned int i;
 	for (i = 0; i < srcsz; i++)
 	{
-		pdst[i] = (unsigned_val[i] & 0x00020000) ? (unsigned_val[i] | 0xFFFC0000) : unsigned_val[i];
+		if (channel_mode[i] == 0) // BIPOLAR_MODE
+		{
+			pdst[i] = (unsigned_val[i] & 0x00020000) ? (unsigned_val[i] | 0xFFFC0000) : unsigned_val[i];
+		}
+		else // UNIPOLAR_MODE
+		{
+			pdst[i] = unsigned_val[i];
+		}
 	}
 }
 
