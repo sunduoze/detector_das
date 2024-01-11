@@ -87,12 +87,9 @@ protected:
 #if CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
 #define VSPI FSPI
 #endif
-	// uninitalised pointers to SPI objects
-	//  SPIClass * vspi = NULL;
+
 	SPIClass *hspi = NULL;
 	uint8_t channel_mode[ADC_ALL_CH];
-	// static int32_t cpy18b32b(uint8_t *psrc, uint32_t srcsz, uint32_t *pdst);
-	// static int32_t cpy26b32b(uint8_t *psrc, uint32_t srcsz, uint32_t *pdst);
 
 public:
 	AD7606C_Serial(int CONVST, int BUSY);

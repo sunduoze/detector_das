@@ -4,7 +4,7 @@ void enter_logo(void)
 {
     Draw_Slow_Bitmap(0, 0, Logo, 128, 64);
     Display();
-    delay(3000);
+    delay(1000);
 
     for (int16_t x = -128; x < 128; x += 12)
     {

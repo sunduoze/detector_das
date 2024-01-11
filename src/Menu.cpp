@@ -160,7 +160,7 @@ struct Slide_Bar Slide_space[] = {
     {(float *)&ScreenBrightness, 0, 255, 16},      // 亮度调整
     {(float *)&MenuScroll, 0, SCREEN_ROW / 16, 1}, // 自适应菜单滚动范围
     {(float *)&UndervoltageAlert, 0, 36, 0.25},
-    {(float *)&psu_set_cv_volt, 17.8, 19.7, 0.02},
+    {(float *)&psu_set_cv_volt, 18.0, 19.7, 0.02},
     {(float *)&psu_set_cc_curr, 0.0, 0.5, 0.01},
     {(float *)&adc_cali.adc_gain_ch[ADC_CH1], 0.9, 1.1, 0.00002},
     {(float *)&adc_cali.adc_offset_ch[ADC_CH1], -0.1, 0.1, 0.00002},
@@ -268,7 +268,7 @@ void switch_disp_adc_ch()
 void psu_set()
 {
     // Serial.printf("psu_set_cv_volt:%f\r\n", psu_set_cv_volt);
-    digital_pot.set_res_val((uint32_t)map_f(psu_set_cv_volt, 17.8, 19.8, 0, 2e4));
+    digital_pot.set_res_val((uint32_t)map_f(psu_set_cv_volt, 18.0, 20.0, 0, 2e4));
 }
 
 void save_calibration_para(void)
@@ -294,11 +294,11 @@ void WIFI_Rename(void)
 }
 struct Menu_System Menu[] = {
     {0, 0, Title_Menu_Op, "[DAS设置]", Menu_NULL_IMG, 0, 0, *Save_Exit_Menu_System},
-    {0, 1, Jump_Menu_Op, "显示配置", Menu_NULL_IMG, 1, 0, Menu_NULL_F},
+    {0, 1, Jump_Menu_Op, "功能配置", Menu_NULL_IMG, 1, 0, Menu_NULL_F},
     {0, 2, Jump_Menu_Op, "系统配置", Menu_NULL_IMG, 5, 0, Menu_NULL_F},
     {0, 3, F_Menu_Op, "返回", Menu_NULL_IMG, 0, 0, *Save_Exit_Menu_System},
 
-    {1, 0, Title_Menu_Op, "[显示设置]", Menu_NULL_IMG, 0, 1, Menu_NULL_F},
+    {1, 0, Title_Menu_Op, "[功能设置]", Menu_NULL_IMG, 0, 1, Menu_NULL_F},
     {1, 1, Jump_Menu_Op, "主界面显示", IMG_Main, 2, 0, Menu_NULL_F},
     {1, 2, Jump_Menu_Op, "系统校准", IMG_Calibration, 12, 0, Menu_NULL_F},
     {1, 3, Jump_Menu_Op, "可调电源设置", IMG_Adj_PSU, 13, 0, Menu_NULL_F},
@@ -636,7 +636,7 @@ void draw_curve(uint32_t val)
             break;
         }
         uint32_t buffer_formated[128];
-        disp_buf[127] = adc_r_d_avg[disp_channel];
+        disp_buf[127] = val;
         for (uint8_t i = 1; i < 128; i++)
         {
             disp_buf[i - 1] = disp_buf[i];

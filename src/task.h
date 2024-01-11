@@ -68,7 +68,6 @@ extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled;
 extern AD5272 digital_pot;
 
 extern float adc_disp_val[ADC_ALL_CH];
-extern int32_t adc_r_d_avg[ADC_ALL_CH];
 extern spinlock_t task_lock;
 extern uint8_t rotary_dir;
 extern uint8_t volume;

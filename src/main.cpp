@@ -10,7 +10,7 @@ void setup(void)
   // xTaskCreatePinnedToCore(xTask_dbgx, "Task_dbgx", 4096, NULL, 6, NULL, PINNED_TO_CORE1);
 }
 
-int i = 0;
+int i = 0;                                                                                                                                                                                                                                                                                                  
 void loop(void)
 {
   vTaskDelay(50);

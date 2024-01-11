@@ -47,12 +47,15 @@ int AD5272::write_data(uint16_t cmd, uint16_t data)
 uint32_t AD5272::set_res_val(uint32_t resistor)
 {
   uint32_t temp = resistor;
-
+  int ret = 0;
+  Wire.begin(SDA, SCL, 1e5);
   if (temp > AD5272_RES_VAL)
     temp = AD5272_RES_VAL;
   temp = resistor * 1023 / AD5272_RES_VAL;
   // Serial.printf("set_res_val:%d\r\n", temp);
-  return write_data(AD5272_RDAC_WRITE, temp);
+  ret = write_data(AD5272_RDAC_WRITE, temp);
+  Wire.begin(SDA, SCL, 1e6);
+  return ret;
 }
 
 int AD5272::read_rdac(void)

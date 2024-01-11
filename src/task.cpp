@@ -18,20 +18,18 @@ uint8_t rotary_dir = false;
 uint8_t volume = true;
 
 int32_t adc_raw_data[ADC_ALL_CH];
-int32_t adc_raw_data_sum_256[ADC_ALL_CH] = {0, 0};
-int32_t adc_r_d_avg[ADC_ALL_CH]; // adc raw data average
 float adc_disp_val[ADC_ALL_CH];
 
 uint8_t conn_wifi = 0;
 adc_calibration_ adc_cali;
 
-char ssid[] = "CandyTime_857112"; // wifi名
-char password[] = "23399693";	  // wifi密码
-char ssid_bk[] = "GBA";			  // wifi名
-char password_bk[] = "XTyjy8888"; // wifi密码
+char ssid[] = "xxxxx";		  // wifi名
+char password[] = "xxxxx";	  // wifi密码
+char ssid_bk[] = "xxxxx";	  // wifi名
+char password_bk[] = "xxxxx"; // wifi密码
 
-const IPAddress serverIP(192, 168, 100, 25); // 欲访问的服务端IP地址
-uint16_t serverPort = 1234;					 // 服务端口号
+const IPAddress serverIP(192, 168, 1, 1); // 欲访问的服务端IP地址
+uint16_t serverPort = 1234;				  // 服务端口号
 uint64_t ChipMAC;
 char ChipMAC_S[19] = {0};
 char CompileTime[20];
@@ -62,7 +60,6 @@ uint8_t pd_init(void)
 				Serial.printf("PD 20V ENABLE Sucess\r\n");
 				SetSound(BootSound); // 播放音效
 				break;
-				// PD_UFP.set_led(1);      // Output reach 20V and 1.5A, set indicators on
 			}
 			else
 			{
@@ -70,7 +67,6 @@ uint8_t pd_init(void)
 				Serial.printf("DISABLE\r\n");
 				ret = 1;
 				break;
-				// PD_UFP.blink_led(400);  // Output less than 20V or 1.5A, blink LED
 			}
 		}
 		if (timeout-- <= 1)
@@ -134,7 +130,7 @@ void adc_init()
 	adc_cali.adc_gain_ch[ADC_CH1] = 1.0f;
 	adc_cali.adc_offset_ch[ADC_CH1] = -0.017699; //-0.017547;
 
-	adc_cali.adc_gain_ch[ADC_CH2] = 1.00429f;	 // 未校准
+	adc_cali.adc_gain_ch[ADC_CH2] = 0.99664f;	 // 未校准
 	adc_cali.adc_offset_ch[ADC_CH2] = -0.017547; // 未校准
 
 	adc_cali.adc_gain_ch[ADC_CH3] = 0.997993; // 0.990973;
@@ -172,9 +168,11 @@ void oled_init()
 
 void ad527x_init()
 {
+	Wire.begin(SDA, SCL, 1e5);
 	int ret = digital_pot.set_res_val(0);
 	if (ret != 0) // check if data is sent successfully
 		Serial.println("[Error]digital_pot init !");
+	Wire.begin(SDA, SCL, 1e6);
 }
 
 void hardware_init(void)
@@ -182,7 +180,7 @@ void hardware_init(void)
 	beep_init();
 	WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // 关闭断电检测
 	Serial.begin(5e5);
-	Wire.begin(SDA, SCL, 1e6);
+	Wire.begin(SDA, SCL, 4e5);
 	if (pd_init() == 0)
 	{
 		pd_status = true;
@@ -275,28 +273,14 @@ void xTask_adcx(void *xTask)
 	while (1)
 	{
 		AD7606C_18.fast_read(adc_raw_data);
-		for (uint8_t i = 0; i < 8; i++)
-		{
-			adc_raw_data_sum_256[i] += adc_raw_data[i];
-		}
-		if (++cnt >= 256)
-		{
-			cnt = 0;
-			for (uint8_t i = 0; i < 8; i++)
-			{
-				adc_r_d_avg[i] = adc_raw_data_sum_256[i] >> 8;
-				adc_raw_data_sum_256[i] = 0;
-			}
-		}
-
-		adc_disp_val[ADC_CH1] = (C2V(adc_r_d_avg[ADC_CH1], PN20V0) + adc_cali.adc_offset_ch[ADC_CH1]) * adc_cali.adc_gain_ch[ADC_CH1];
-		adc_disp_val[ADC_CH2] = (C2V(adc_r_d_avg[ADC_CH2], PN20V0) + adc_cali.adc_offset_ch[ADC_CH2]) * adc_cali.adc_gain_ch[ADC_CH2];
-		adc_disp_val[ADC_CH3] = (C2V(adc_r_d_avg[ADC_CH3], PN20V0) + adc_cali.adc_offset_ch[ADC_CH3]) * adc_cali.adc_gain_ch[ADC_CH3];
-		adc_disp_val[ADC_CH4] = (C2V(adc_r_d_avg[ADC_CH4], PP5V00) + adc_cali.adc_offset_ch[ADC_CH4]) * adc_cali.adc_gain_ch[ADC_CH4];
-		adc_disp_val[ADC_CH5] = (C2V(adc_r_d_avg[ADC_CH5], PP5V00) + adc_cali.adc_offset_ch[ADC_CH5]) * adc_cali.adc_gain_ch[ADC_CH5];
-		adc_disp_val[ADC_CH6] = (C2V(adc_r_d_avg[ADC_CH6], PP10V0) + adc_cali.adc_offset_ch[ADC_CH6]) * adc_cali.adc_gain_ch[ADC_CH6];
-		adc_disp_val[ADC_CH7] = (C2V(adc_r_d_avg[ADC_CH7], PP5V00) + adc_cali.adc_offset_ch[ADC_CH7]) * adc_cali.adc_gain_ch[ADC_CH7];
-		adc_disp_val[ADC_CH8] = (C2V(adc_r_d_avg[ADC_CH8], PN5V00) + adc_cali.adc_offset_ch[ADC_CH8]) * adc_cali.adc_gain_ch[ADC_CH8];
+		adc_disp_val[ADC_CH1] = (C2V(adc_raw_data[ADC_CH1], PN20V0) + adc_cali.adc_offset_ch[ADC_CH1]) * adc_cali.adc_gain_ch[ADC_CH1];
+		adc_disp_val[ADC_CH2] = (C2V(adc_raw_data[ADC_CH2], PN20V0) + adc_cali.adc_offset_ch[ADC_CH2]) * adc_cali.adc_gain_ch[ADC_CH2];
+		adc_disp_val[ADC_CH3] = (C2V(adc_raw_data[ADC_CH3], PN20V0) + adc_cali.adc_offset_ch[ADC_CH3]) * adc_cali.adc_gain_ch[ADC_CH3];
+		adc_disp_val[ADC_CH4] = (C2V(adc_raw_data[ADC_CH4], PP5V00) + adc_cali.adc_offset_ch[ADC_CH4]) * adc_cali.adc_gain_ch[ADC_CH4];
+		adc_disp_val[ADC_CH5] = (C2V(adc_raw_data[ADC_CH5], PP5V00) + adc_cali.adc_offset_ch[ADC_CH5]) * adc_cali.adc_gain_ch[ADC_CH5];
+		adc_disp_val[ADC_CH6] = (C2V(adc_raw_data[ADC_CH6], PP10V0) + adc_cali.adc_offset_ch[ADC_CH6]) * adc_cali.adc_gain_ch[ADC_CH6];
+		adc_disp_val[ADC_CH7] = (C2V(adc_raw_data[ADC_CH7], PP5V00) + adc_cali.adc_offset_ch[ADC_CH7]) * adc_cali.adc_gain_ch[ADC_CH7];
+		adc_disp_val[ADC_CH8] = (C2V(adc_raw_data[ADC_CH8], PN5V00) + adc_cali.adc_offset_ch[ADC_CH8]) * adc_cali.adc_gain_ch[ADC_CH8];
 
 		delayMicroseconds(730);
 	}
@@ -398,9 +382,9 @@ void xTask_blex2(void *xTask)
 	while (1)
 	{
 		time = millis() / 1000.0;
-		data0 = C2V(adc_r_d_avg[0], PN10V0);
-		data3 = C2V(adc_r_d_avg[3], PN10V0);
-		data4 = C2V(adc_r_d_avg[4], PN10V0);
+		// data0 = C2V(adc_r_d_avg[0], PN10V0);
+		// data3 = C2V(adc_r_d_avg[3], PN10V0);
+		// data4 = C2V(adc_r_d_avg[4], PN10V0);
 		PhyphoxBLE::write(time, data0, data3, data4);
 		vTaskDelay(100);
 		PhyphoxBLE::poll(); // Only required for the Arduino Nano 33 IoT, but it does no harm for other boards.
